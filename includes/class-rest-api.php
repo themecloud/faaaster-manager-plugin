@@ -1723,7 +1723,7 @@ namespace Tenweb_Manager {
             include_once TENWEB_INCLUDES_DIR . '/class-rollback-plugin-upgrader.php';
 
             $nonce = 'upgrade-plugin_' . $plugin;
-            $url = 'index.php?page=wp-rollback&plugin_file=' . $pluginPath . 'action=upgrade-plugin';
+            $url = 'index.php?page=hostmanager&plugin_file=' . $pluginPath . 'action=upgrade-plugin';
 
             
             $skin     = new \Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin', 'version'));
