@@ -427,8 +427,8 @@ namespace Tenweb_Manager {
                             // no plugins needs to be updated
                             if (empty($pluginUpdates)) {
                                 $data_for_response = array(
-                                    "code"    => "no_plugin_update",
-                                    "message" => "No plugins need update.",
+                                    "code"    => "already_updated",
+                                    "message" => "All plugins are on their latest version.",
                                     "data"    => array("status" => 500)
                                 );
 
@@ -446,8 +446,8 @@ namespace Tenweb_Manager {
                             // some plugins needs to be updated, but not this one
                             if (!$foundPlugin) {
                                 $data_for_response = array(
-                                    "code"    => "no_plugin_update",
-                                    "message" => "This plugin doesn't need an update",
+                                    "code"    => "already_updated",
+                                    "message" => "This plugin is already at the latest version.",
                                     "data"    => array("status" => 500)
                                 );
 
