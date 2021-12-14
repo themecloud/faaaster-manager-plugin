@@ -506,7 +506,7 @@ namespace Tenweb_Manager {
                         $status = 200;
                         $data_for_response = array(
                             "code" => "ok",
-                            "data" => "Succesfully updated plugin."
+                            "message" => "Succesfully updated plugin."
                         );
                     } catch (\Exception $e) {
                         $data_for_response = array(
