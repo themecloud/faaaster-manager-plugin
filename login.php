@@ -49,7 +49,7 @@ class Login
 
         define('WP_INSTALLING', true);
 
-        $this->getUser($json['name']);
+        return $this->getUser($json['name']);
     }
 
     private function getUser($username)
