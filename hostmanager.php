@@ -11,6 +11,8 @@
 
 require_once('plugin.php');
 require_once('site-state.php');
+require_once('login.php');
+
 
 $siteState = new SiteState();
 
@@ -38,6 +40,11 @@ function plugin_upgrade($request) {
 }
 
 
+function sso_login() {
+    $loginClass = new Login();
+    return $loginClass->sso();
+}
+
 /**
  * at_rest_init
  */
@@ -62,6 +69,12 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_upgrade',
+        'args' => array(),
+    ));
+
+    register_rest_route($namespace, '/login', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'sso_login',
         'args' => array(),
     ));
     
