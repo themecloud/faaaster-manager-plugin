@@ -13,7 +13,6 @@ require_once('plugin.php');
 require_once('site-state.php');
 require_once('loginSSO.php');
 
-
 $siteState = new SiteState();
 
 function get_check() {

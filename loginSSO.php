@@ -6,7 +6,9 @@ class LoginSSO
     public function authorize($request) {
         $param = $request->get_query_params();
 
-        if ($_SERVER['OAUTH_STATE'] !== $param['state']) {
+        $OAUTH_STATE = "qc0Bwo99CbYA619fOgsTBxTfBhVE";
+
+        if ($OAUTH_STATE !== $param['state']) {
             exit;
         }
 
@@ -19,6 +21,10 @@ class LoginSSO
     }
 
     public function sso() {
+        $OAUTH_ENDPOINT = "https://app.themecloud.io/oauth/api/v1.0/oauth2/authorize";
+        $OAUTH_CLIENT_ID = "lIpU30BU7nW48OYX+YjYu+7FMTY0MDg4MjYwOA==";
+        $OAUTH_STATE = "qc0Bwo99CbYA619fOgsTBxTfBhVE";
+
         if(!empty($_COOKIE['tc_token'])) {
             $loginResult = $this->login($_COOKIE['tc_token']);
             return $loginResult;
@@ -26,21 +32,23 @@ class LoginSSO
         
         $parameters = array(
             'response_type' => 'token',
-            'client_id' => $_SERVER['OAUTH_CLIENT_ID'],
+            'client_id' => $OAUTH_CLIENT_ID,
             'scope' => 'username',
-            'state' => $_SERVER['OAUTH_STATE']
+            'state' => $OAUTH_STATE,
+            'redirect_uri' => 'http' . (isset($_SERVER['HTTPS']) ? 's' : '') . '://' . "{$_SERVER['HTTP_HOST']}/?rest_route=/hostmanager/v1/authorize"
         );
         
-        $uri = $_SERVER['OAUTH_ENDPOINT'] . "?" . http_build_query($parameters);
+        $uri = $OAUTH_ENDPOINT . "?" . http_build_query($parameters);
         
         header("Location: $uri");
     }
 
     public function login($token)
     {
+        $OAUTH_GET_USER = "https://app.themecloud.io/oauth/api/v1.0/user/getUser/lIpU30BU7nW48OYX+YjYu+7FMTY0MDg4MjYwOA==";
 
         require_once ABSPATH . 'wp-content/wp-load.php';
-        $conn = curl_init($_SERVER['OAUTH_GET_USER']);
+        $conn = curl_init($OAUTH_GET_USER);
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($conn, CURLOPT_HTTPHEADER, array(
