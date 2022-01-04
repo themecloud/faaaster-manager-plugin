@@ -35,9 +35,7 @@ class LoginSSO
             'client_id' => $OAUTH_CLIENT_ID,
             'scope' => 'username',
             'state' => $OAUTH_STATE,
-            'redirect_uri' => 'http' . (isset($_SERVER['HTTPS']) ? 's' : '') . '://' . "{$_SERVER['HTTP_HOST']}/?rest_route=/hostmanager/v1/authorize"
-        );
-        
+        );     
         $uri = $OAUTH_ENDPOINT . "?" . http_build_query($parameters);
         
         header("Location: $uri");
@@ -47,7 +45,6 @@ class LoginSSO
     {
         $OAUTH_GET_USER = "https://app.themecloud.io/oauth/api/v1.0/user/getUser/lIpU30BU7nW48OYX+YjYu+7FMTY0MDg4MjYwOA==";
 
-        require_once ABSPATH . 'wp-content/wp-load.php';
         $conn = curl_init($OAUTH_GET_USER);
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
