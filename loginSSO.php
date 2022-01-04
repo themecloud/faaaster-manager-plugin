@@ -3,12 +3,25 @@
 class LoginSSO
 {
 
+    public function authorize($request) {
+        $param = $request->get_query_params();
+
+        if ($_SERVER['OAUTH_STATE'] !== $param['state']) {
+            exit;
+        }
+
+        $access_token = $param['access_token'];
+        
+        setcookie('tc_token', $access_token, time() + $param['expires_in']);
+
+        $loginResult = $this->login($access_token);
+        return $loginResult;
+    }
+
     public function sso() {
         if(!empty($_COOKIE['tc_token'])) {
             $loginResult = $this->login($_COOKIE['tc_token']);
-            if($loginResult !== false) {
-                die();
-            }   
+            return $loginResult;
         }
         
         $parameters = array(
@@ -39,13 +52,25 @@ class LoginSSO
         curl_close($conn);
 
         if ($result === false) {
-            return false;
+            $data_for_response = array(
+                "code"    => "no_result",
+                "message" => "OAuth didn't return a result.",
+                "data"    => array("status" => 500)
+            );
+
+            return new WP_REST_Response($data_for_response, 500);
         }
 
         $json = json_decode($result, true);
 
         if ($json['success'] != true) {
-            return false;
+            $data_for_response = array(
+                "code"    => "no_success",
+                "message" => "OAuth didn't return a success.",
+                "data"    => array("status" => 500, "data" => $json)
+            );
+
+            return new WP_REST_Response($data_for_response, 500);
         }
 
         define('WP_INSTALLING', true);
@@ -57,27 +82,32 @@ class LoginSSO
     {
         $user_data = get_userdata('login', $username);
 
+        // no user found
         if ($user_data === false) {
             wp_redirect(admin_url('index.php'));
-            die();
+            exit;
         }
 
+        // connect the user
         wp_set_current_user($user_data->ID, $user_data->user_login);
         wp_set_auth_cookie($user_data->ID);
         do_action('wp_login', $user_data->user_login);
 
         $parsed = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY);
 
+        // redirect home or where the user were
         if (!$parsed) {
             wp_redirect("/");
+            exit;
         }
         parse_str($parsed, $query);
 
         if (isset($query['redirect_to'])) {
             wp_redirect($query['redirect_to']);
-            die();
+            exit;
         }
 
         wp_redirect("/");
+        exit;
     }
 }

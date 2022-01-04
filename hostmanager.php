@@ -45,6 +45,11 @@ function sso_login() {
     return $loginClass->sso();
 }
 
+function sso_authorize($request) {
+    $loginClass = new LoginSSO();
+    return $loginClass->authorize($request);
+}
+
 /**
  * at_rest_init
  */
@@ -75,6 +80,12 @@ function at_rest_init()
     register_rest_route($namespace, '/login', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'sso_login',
+        'args' => array(),
+    ));
+
+    register_rest_route($namespace, '/authorize', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'sso_authorize',
         'args' => array(),
     ));
     
