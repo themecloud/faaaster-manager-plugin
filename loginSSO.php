@@ -1,11 +1,12 @@
 <?php
 
-class Login
+class LoginSSO
 {
 
     public function sso() {
         if(!empty($_COOKIE['tc_token'])) {
-            if($this->login($_COOKIE['tc_token']) !== false) {
+            $loginResult = $this->login($_COOKIE['tc_token']);
+            if($loginResult !== false) {
                 die();
             }   
         }
@@ -49,7 +50,7 @@ class Login
 
         define('WP_INSTALLING', true);
 
-        return $this->getUser($json['name']);
+        $this->getUser($json['name']);
     }
 
     private function getUser($username)
