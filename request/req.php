@@ -84,7 +84,7 @@ $actionManager = null;
 
 $headers = hostmanager_get_headers();
 
-if ($method === 'GET' && isset($_GET['x-action']) && $_GET['x-action'] === '/v1/login') {
+if ($method === 'GET' && isset($_GET['x-action']) && ($_GET['x-action'] === '/v1/login' || $_GET['x-action'] === '/v1/authorize')) {
     if (!isset($_GET['x-action'])) {
         hostmanager_response([
             "code" => "not_authorized"
@@ -130,10 +130,10 @@ try {
 
             return hostmanager_response($response);
         case '/v1/authorize':
-            $data = hostmanager_get_parameters();
+            $data = hostmanager_get_parameters("GET");
 
             $loginClass = new LoginSSO();
-            $response = $loginClass->authorize($request);
+            $response = $loginClass->authorize($data);
 
             return hostmanager_response($response);
     }
@@ -143,5 +143,3 @@ try {
     ]);
     return;
 }
-
-?>
