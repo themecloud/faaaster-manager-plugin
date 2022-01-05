@@ -1,11 +1,11 @@
 <?php
 
+
+
 class LoginSSO
 {
 
-    public function authorize($request) {
-        $param = $request->get_query_params();
-
+    public function authorize($param) {
         $OAUTH_STATE = "qc0Bwo99CbYA619fOgsTBxTfBhVE";
 
         if ($OAUTH_STATE !== $param['state']) {
@@ -63,7 +63,7 @@ class LoginSSO
                 "data"    => array("status" => 500)
             );
 
-            return new WP_REST_Response($data_for_response, 500);
+            return $data_for_response;
         }
 
         $json = json_decode($result, true);
@@ -75,7 +75,7 @@ class LoginSSO
                 "data"    => array("status" => 500, "data" => $json)
             );
 
-            return new WP_REST_Response($data_for_response, 500);
+            return $data_for_response;
         }
 
         define('WP_INSTALLING', true);
@@ -85,6 +85,9 @@ class LoginSSO
 
     private function getUser($username)
     {
+        require_once ABSPATH . 'wp-includes/pluggable.php';
+
+    
         $user_data = get_userdata('login', $username);
 
         // no user found

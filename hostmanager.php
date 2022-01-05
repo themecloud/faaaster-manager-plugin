@@ -15,6 +15,7 @@ require_once('loginSSO.php');
 
 $siteState = new SiteState();
 
+
 function get_check() {
     $data = array(
         "code" => "ok",
@@ -38,16 +39,6 @@ function plugin_upgrade($request) {
     return $pluginUpgrader->plugin_upgrade($request);
 }
 
-
-function sso_login() {
-    $loginClass = new LoginSSO();
-    return $loginClass->sso();
-}
-
-function sso_authorize($request) {
-    $loginClass = new LoginSSO();
-    return $loginClass->authorize($request);
-}
 
 /**
  * at_rest_init
@@ -73,18 +64,6 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_upgrade',
-        'args' => array(),
-    ));
-
-    register_rest_route($namespace, '/login', array(
-        'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'sso_login',
-        'args' => array(),
-    ));
-
-    register_rest_route($namespace, '/authorize', array(
-        'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'sso_authorize',
         'args' => array(),
     ));
     
