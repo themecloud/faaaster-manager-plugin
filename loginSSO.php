@@ -1,5 +1,5 @@
 <?php
-require_once('/var/www/wp-content/themecloud_oauth.php');
+require_once('/app/www/wp-content/themecloud_oauth.php');
 
 if (!defined('OAUTH_STATE') || !defined('OAUTH_ENDPOINT') || !defined('OAUTH_CLIENT_ID') || !defined('OAUTH_GET_USER')) {
     exit;
@@ -9,6 +9,7 @@ class LoginSSO
 
     public function authorize($param)
     {
+        
         if (OAUTH_STATE !== $param['state']) {
             exit;
         }

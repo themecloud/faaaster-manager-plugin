@@ -11,7 +11,6 @@
 
 require_once('plugin.php');
 require_once('site-state.php');
-require_once('loginSSO.php');
 
 $siteState = new SiteState();
 
@@ -39,6 +38,16 @@ function plugin_upgrade($request) {
     return $pluginUpgrader->plugin_upgrade($request);
 }
 
+function get_db_prefix() {
+    require_once ABSPATH . "wp-blog-header.php";
+
+    $data = array(
+        "code" => "ok",
+        "data" => $wpdb->base_prefix
+    );
+
+    return new WP_REST_Response($data, 200);
+}
 
 /**
  * at_rest_init
@@ -61,11 +70,18 @@ function at_rest_init()
         'args' => array(),
     ));
 
+    register_rest_route($namespace, '/db_prefix', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'get_db_prefix',
+        'args' => array(),
+    ));
+
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_upgrade',
         'args' => array(),
     ));
+    
     
 }
 
