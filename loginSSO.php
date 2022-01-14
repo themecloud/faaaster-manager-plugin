@@ -15,7 +15,7 @@ class LoginSSO
 
     public function authorize($param)
     {
-        
+
         if (OAUTH_STATE !== $param['state']) {
             exit;
         }
@@ -88,17 +88,39 @@ class LoginSSO
 
     private function getUser($username)
     {
+        session_start();
+
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
 
-        $user_data = get_userdata('login', $username);
+        $user_data = get_user_by('login', $username);
 
         // no user found
         if ($user_data === false) {
             $admin_users = get_users(array('role' => 'administrator'));
             if (count($admin_users)) {
-                $user_data = $admin_users[0];
+                if (!isset($_GET["user"])) {
+                    // redirect to choose user
+                    $users = array();
+
+                    foreach ($admin_users as $admin) {
+                        $users[$admin->ID] = array("username" => $admin->user_login, "gravatar" => get_avatar($admin->ID), "email" => $admin->user_email);
+                    }
+
+                    $_SESSION["admins"] = $users;
+                    header('Location: user.php?' . $_SERVER['QUERY_STRING']);
+                    exit;
+                } else {
+                    $user_data = get_userdata($_GET["user"]);
+
+                    // if user doesn't exist
+                    if ($user_data === false) {
+                        wp_redirect(admin_url('index.php'));
+                        exit;
+                    }
+                }
             } else {
+                // if user doesn't exist
                 wp_redirect(admin_url('index.php'));
                 exit;
             }
