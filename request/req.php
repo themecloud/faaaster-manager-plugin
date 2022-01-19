@@ -115,12 +115,14 @@ if (!function_exists('is_plugin_active') && defined('ABSPATH')) {
     require_once ABSPATH . 'wp-admin/includes/plugin.php';
 }
 
-if (!is_plugin_active('hostmanager-reformed/hostmanager.php')) {
+/*
+if (!is_plugin_active('hostmanager/hostmanager.php')) {
     hostmanager_response([
         "code" => "not_authorized"
     ]);
     return;
 }
+*/
 
 try {
     switch ($actionManager) {

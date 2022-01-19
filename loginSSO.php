@@ -1,6 +1,4 @@
 <?php
-
-
 if (!file_exists('/app/conf/manager.php')) {
     exit;
 }
@@ -48,6 +46,11 @@ class LoginSSO
 
     public function login($token)
     {
+
+        session_start();
+
+        require_once ABSPATH . 'wp-includes/pluggable.php';
+
         $conn = curl_init(OAUTH_GET_USER);
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
@@ -59,26 +62,18 @@ class LoginSSO
 
         curl_close($conn);
 
-        if ($result === false) {
-            $data_for_response = array(
-                "code"    => "no_result",
-                "message" => "OAuth didn't return a result.",
-                "data"    => array("status" => 500)
-            );
+        $_SESSION["lang"] = get_locale();
 
-            return $data_for_response;
+        if ($result === false) {
+            header('Location: err.php?error_description=' . $_GET["error_description"]);
+            exit;
         }
 
         $json = json_decode($result, true);
 
         if ($json['success'] != true) {
-            $data_for_response = array(
-                "code"    => "no_success",
-                "message" => "OAuth didn't return a success.",
-                "data"    => array("status" => 500, "data" => $json)
-            );
-
-            return $data_for_response;
+            header('Location: err.php?' . $_SERVER['QUERY_STRING']);
+            exit;
         }
 
         define('WP_INSTALLING', true);
@@ -108,6 +103,8 @@ class LoginSSO
                     }
 
                     $_SESSION["admins"] = $users;
+                    $_SESSION["lang"] = get_locale();
+
                     header('Location: user.php?' . $_SERVER['QUERY_STRING']);
                     exit;
                 } else {
