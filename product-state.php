@@ -1,13 +1,4 @@
 <?php
-/**
- * Created by PhpStorm.
- * User: mher
- * Date: 9/15/17
- * Time: 3:45 PM
- */
-
-namespace Tenweb_Manager;
-
 
 class ProductState
 {
@@ -25,7 +16,6 @@ class ProductState
     public $network_active;//@type int [0,1]
     public $is_paid;//@type int [0,1]
     public $screenshot = "";//@type string
-    public $tenweb_product;
     public $author = "";//@type string
     public $repo_version;//@type string
     public $parent_theme_name = "";//@type string
@@ -43,10 +33,9 @@ class ProductState
      * @param $installed
      * @param $active
      * @param $is_paid
-     * @param $tenweb_product
      * @param $network_active
      */
-    public function __construct($product_id, $slug, $title, $description, $type, $version, $update, $installed, $active = null, $is_paid = null, $tenweb_product = true, $network_active = null)
+    public function __construct($product_id, $slug, $title, $description, $type, $version, $update, $installed, $active = null, $is_paid = null, $network_active = null)
     {
         $this->product_id = intval($product_id);
         $this->slug = $slug;
@@ -59,7 +48,6 @@ class ProductState
         $this->active = ($active !== null) ? intval($active) : null;
         $this->network_active = ($network_active !== null) ? intval($network_active) : null;
         $this->is_paid = ($is_paid !== null) ? intval($is_paid) : null;
-        $this->tenweb_product = $tenweb_product;
     }
 
     public function set_active($wp_slug)
@@ -142,11 +130,6 @@ class ProductState
 
     }
 
-    public function set_tenweb_product($tenweb_product)
-    {
-        $this->tenweb_product = $tenweb_product;
-    }
-
     public function set_screenshot($url)
     {
         $this->screenshot = $url;
@@ -165,7 +148,6 @@ class ProductState
             'network_active' => $this->network_active ? 1 : 0,
             'is_paid'        => $this->is_paid ? 1 : 0,
             'screenshot'     => $this->screenshot,
-            'tenweb_product' => $this->tenweb_product ? 1 : 0,
             'author'         => $this->author,
             'repo_version'   => $this->repo_version
         );

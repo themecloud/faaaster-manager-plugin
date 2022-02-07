@@ -9,8 +9,6 @@
  */
 
 
-namespace Tenweb_Manager;
-
 /**
  * Class WP_Custom_Plugin_Upgrader
  */
@@ -19,7 +17,7 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
-class WP_Custom_Plugin_Upgrader extends \Plugin_Upgrader
+class WP_Custom_Plugin_Upgrader extends Plugin_Upgrader
 {
 
 
