@@ -86,7 +86,7 @@ function at_rest_init()
         'args' => array(),
     ));
 
-    register_rest_route('sso', '/login', array(
+    register_rest_route('sso/v1', '/login', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'login',
         'args' => array(),
