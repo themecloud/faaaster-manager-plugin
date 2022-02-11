@@ -49,6 +49,10 @@ function get_db_prefix() {
     return new WP_REST_Response($data, 200);
 }
 
+function login() {
+    include('request/index.php');
+}
+
 /**
  * at_rest_init
  */
@@ -81,8 +85,12 @@ function at_rest_init()
         'callback'  => 'plugin_upgrade',
         'args' => array(),
     ));
-    
-    
+
+    register_rest_route($namespace, '/login', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'login',
+        'args' => array(),
+    ));
 }
 
 add_action('rest_api_init', 'at_rest_init');

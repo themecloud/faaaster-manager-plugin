@@ -15,9 +15,6 @@ class SiteState
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
-
-
-
         //$plugins = get_plugins();
         $plugins = get_plugins();
         

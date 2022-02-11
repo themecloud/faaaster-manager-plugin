@@ -1,28 +1,6 @@
 <?php
 
-require_once('../loginSSO.php');
-
-function hostmanager_search_wp_config($dir, $fileSearch)
-{
-    try {
-        $files = scandir($dir);
-
-        foreach ($files as $key => $value) {
-            $path = @realpath($dir.DIRECTORY_SEPARATOR.$value);
-
-            if (!is_dir($path)) {
-                if ($fileSearch == $value) {
-                    return $path;
-                    break;
-                }
-            } elseif ($value != "." && $value != "..") {
-                hostmanager_search_wp_config($path, $fileSearch);
-            }
-        }
-    } catch (\Exception $e) {
-        return __DIR__ . '/../../../../wp-config.php';
-    }
-}
+require_once(__DIR__ . '/../loginSSO.php');
 
 
 function hostmanager_response($data)
@@ -104,11 +82,6 @@ if ($method === 'GET' && isset($_GET['x-action']) && ($_GET['x-action'] === '/v1
     } else {
         $actionManager = $headers['X-Action'];
     }
-}
-
-if (!defined('ABSPATH')) {
-    $fileWpConfig = hostmanager_search_wp_config(__DIR__ . '/../../../../', 'wp-config.php');
-    require_once $fileWpConfig;
 }
 
 if (!function_exists('is_plugin_active') && defined('ABSPATH')) {

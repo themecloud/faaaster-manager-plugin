@@ -80,7 +80,7 @@
                 <?php endif; ?>
             <?php foreach ($_SESSION["admins"] as $id => $admin) : ?>
                     
-                    <a class="user-block" href="<?php echo "req.php?" . $_SERVER['QUERY_STRING'] . "&user=" . $id ?>">
+                    <a class="user-block" href="<?php echo "index.php?" . $_SERVER['QUERY_STRING'] . "&user=" . $id ?>">
                         <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
                         <span class="user-infos">
                             <h3><?php echo $admin["username"]; ?></h3>
