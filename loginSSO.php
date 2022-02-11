@@ -65,14 +65,25 @@ class LoginSSO
         $_SESSION["lang"] = get_locale();
 
         if ($result === false) {
-            header('Location: err.php?error_description=' . $_GET["error_description"]);
+
+            // redirect to err page
+            header('Cache-Control: no-cache');
+            header('Content-Type: text/html');
+            include("request/err.php");
             exit;
         }
 
         $json = json_decode($result, true);
 
         if ($json['success'] != true) {
-            header('Location: err.php?' . $_SERVER['QUERY_STRING']);
+            // redirect to err page
+            parse_str($_SERVER['QUERY_STRING'], $get_array);
+
+            $_GET["error_description"] = $get_array["error_description"];
+
+            header('Cache-Control: no-cache');
+            header('Content-Type: text/html');
+            include("request/err.php");
             exit;
         }
 
@@ -105,7 +116,10 @@ class LoginSSO
                     $_SESSION["admins"] = $users;
                     $_SESSION["lang"] = get_locale();
 
-                    header('Location: user.php?' . $_SERVER['QUERY_STRING']);
+                    // redirect to choose a user
+                    header('Cache-Control: no-cache');
+                    header('Content-Type: text/html');
+                    include("request/user.php");
                     exit;
                 } else {
                     $user_data = get_userdata($_GET["user"]);
