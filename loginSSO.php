@@ -1,9 +1,9 @@
 <?php
-if (!file_exists('/app/conf/manager.php')) {
+if (!file_exists('/app/.include/manager.php')) {
     exit;
 }
 
-require_once('/app/conf/manager.php');
+require_once('/app/.include/manager.php');
 
 if (!defined('OAUTH_STATE') || !defined('OAUTH_ENDPOINT') || !defined('OAUTH_CLIENT_ID') || !defined('OAUTH_GET_USER')) {
     exit;
