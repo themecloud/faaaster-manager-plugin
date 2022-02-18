@@ -80,7 +80,7 @@
                 <?php endif; ?>
             <?php foreach ($_SESSION["admins"] as $id => $admin) : ?>
                     
-                    <a class="user-block" href="<?php echo "/?rest_route=/hostmanager/v1/login&x-action=/v1/login" . $_SERVER['QUERY_STRING'] . "&user=" . $id ?>">
+                    <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/login" . "&user=" . $id ?>">
                         <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
                         <span class="user-infos">
                             <h3><?php echo $admin["username"]; ?></h3>

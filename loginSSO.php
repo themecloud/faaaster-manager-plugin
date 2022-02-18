@@ -141,7 +141,7 @@ class LoginSSO
         // connect the user
         wp_set_current_user($user_data->ID, $user_data->user_login);
         wp_set_auth_cookie($user_data->ID);
-        do_action('wp_login', $user_data->user_login);
+        do_action('wp_login', $user_data->user_login, $user_data);
 
         $parsed = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY);
 
