@@ -105,7 +105,7 @@ class LoginSSO
         if ($user_data === false) {
             $admin_users = get_users(array('role' => 'administrator'));
             if (count($admin_users)) {
-                if (!isset($_GET["user"])) {
+                if (!isset($_GET["user"]) && count($admin_users) > 1) {
                     // redirect to choose user
                     $users = array();
 
@@ -121,7 +121,15 @@ class LoginSSO
                     header('Content-Type: text/html');
                     include("request/user.php");
                     exit;
-                } else {
+                } else if (!isset($_GET["user"])) {
+                    $user_data = get_userdata($admin_users[0]->ID);
+
+                    // if user doesn't exist
+                    if ($user_data === false) {
+                        wp_redirect(admin_url('index.php'));
+                        exit;
+                    }
+                }  else {
                     $user_data = get_userdata($_GET["user"]);
 
                     // if user doesn't exist
