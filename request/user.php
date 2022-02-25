@@ -23,7 +23,7 @@
         margin:20px 0 ;
         transition:all 0.4s ease;
         align-items:center;
-        
+
     }
     .user-infos{
         padding-left:20px;
@@ -44,7 +44,7 @@
         color:#3FD2C7;
         margin-top: 5px;
     }
-    .user-image{
+    .user-image, .user-fallback{
         border-radius:100%;
         width:60px;
         height:60px;
@@ -53,6 +53,15 @@
         display: flex;
         justify-content: center;
         align-items: center;
+    }
+    .user-fallback{
+        background: #00458a;
+        color: white;
+        font-size: 30px;
+        font-weight: 200;
+        margin: 8px;
+        padding: 10px;
+        text-transform: uppercase;
     }
     .user-image img{
         border-radius:100%;
@@ -64,7 +73,7 @@
         transform:rotate(360deg);
     }
     body {
-    background: #f0f5f6; 
+    background: #f0f5f6;
     font-family:Roboto, sans-serif;
     }
 </style>
@@ -79,19 +88,22 @@
                     <h1>Select an account</h1>
                 <?php endif; ?>
             <?php foreach ($_SESSION["admins"] as $id => $admin) : ?>
-                    
-                    <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/login" . "&user=" . $id ?>">
-                        <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
+
+                <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/login" . "&user=" . $id ?>">
+                        <?php if($admin["gravatar"]){ ?>
+                            <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
+                        <?php }else{ ?>
+                            <span class="user-fallback"><?php echo substr($admin["username"], 0, 1);?></span>
+                        <?php } ?>
                         <span class="user-infos">
                             <h3><?php echo $admin["username"]; ?></h3>
                             <p><?php echo $admin["email"]; ?></p>
                         </span>
-                    </a>
-                    
+                </a>
+
             <?php endforeach; ?>
             </div>
     <?php endif; ?>
 </body>
 
 </html>
-
