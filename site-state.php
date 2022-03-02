@@ -38,7 +38,6 @@ class SiteState
                 $plugin['update'] = "";
             }
 
-            echo "UPDATE=" . $plugin['update'];
             $state = new ProductState($slug, $slug, $plugin['Title'], $plugin['Description'], 'plugin', $plugin['Version'], $plugin['update'], 1);
             $state->set_active($slug);
             $plugins_state[] = $state->get_wp_info();
