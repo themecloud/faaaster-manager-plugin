@@ -65,6 +65,7 @@ function at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'get_site_state',
         'args' => array(),
+        'permission_callback' => '__return_true',
     ));
 
 
@@ -72,24 +73,28 @@ function at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'get_check',
         'args' => array(),
+        'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/db_prefix', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'get_db_prefix',
         'args' => array(),
+        'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_upgrade',
         'args' => array(),
+        'permission_callback' => '__return_true',
     ));
 
     register_rest_route('sso/v1', '/login', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'login',
         'args' => array(),
+        'permission_callback' => '__return_true',
     ));
 }
 
