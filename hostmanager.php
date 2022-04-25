@@ -12,14 +12,80 @@
 
 require_once('plugin.php');
 require_once('site-state.php');
+require_once('mu-plugin-manager.php');
 
 $siteState = new SiteState();
+$muManager = new MUPluginManager();
 
+add_action('admin_enqueue_scripts', 'hostmanager_assets');
+add_action('admin_menu', 'manager_setup_menu');
+
+function hostmanager_assets($hook)
+{
+
+    // copy files into wp_content_dir because mu-plugins isn't accessible
+
+    $plugin_data = get_plugin_data(__FILE__);
+    $plugin_domain = "/" . $plugin_data['TextDomain'];
+
+    $pluginDir = plugin_dir_path(__FILE__);
+
+    if (!file_exists(WP_CONTENT_DIR . $plugin_domain . "/js")) {
+        mkdir(WP_CONTENT_DIR . $plugin_domain . "/js", 0755, true);
+    }
+
+    if (!file_exists(WP_CONTENT_DIR . $plugin_domain . "/js/script.js")) {
+        copy($pluginDir . "/js/script.js", WP_CONTENT_DIR . $plugin_domain . "/js/script.js");
+    }
+
+    // only enqueue script on our own page
+    if ('toplevel_page_hostmanager' != $hook) {
+        return;
+    }
+
+    // Charger notre script
+    wp_enqueue_script('hostmanager',  WP_CONTENT_URL . $plugin_domain . "/js/script.js", array('jquery'), '1.0', true);
+
+    // Envoyer une variable de PHP à JS proprement
+    wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url()]);
+}
+
+function manager_setup_menu()
+{
+
+    add_menu_page('HostManger Plugin', 'HostManger Plugin', 'manage_options', 'hostmanager', 'manager_init');
+}
+
+function manager_init()
+{
+
+    global $muManager;
+
+    $html = '
+    <p>Toggle Benchmark plugin</p>    
+        <input type="submit" id="togglePlugin" name="togglePlugin"
+                class="button" value="Toggle plugin" />
+
+    ';
+
+    echo $html;
+}
 
 function get_check()
 {
     $data = array(
         "code" => "ok",
+    );
+
+    return new WP_REST_Response($data, 200);
+}
+
+function toggle_mu_plugin()
+{
+    global $muManager;
+    $data = array(
+        "code" => "ok",
+        "data" => $muManager->togglePlugin()
     );
 
     return new WP_REST_Response($data, 200);
@@ -141,6 +207,13 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_list', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'plugin_list',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/toggle_plugin', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'toggle_mu_plugin',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
