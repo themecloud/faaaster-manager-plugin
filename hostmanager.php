@@ -38,7 +38,14 @@ function plugin_upgrade($request) {
     return $pluginUpgrader->plugin_upgrade($request);
 }
 
-function get_db_prefix() {
+function plugin_install($request)
+{
+    $pluginUpgrader = new PluginUpgrade();
+    return $pluginUpgrader->restActivate($request);
+}
+
+function get_db_prefix()
+{
     require_once ABSPATH . "wp-blog-header.php";
 
     $data = array(
@@ -90,6 +97,13 @@ function at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
+    register_rest_route($namespace, '/plugin_install', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'plugin_install',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
     register_rest_route('sso/v1', '/login', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'login',
@@ -99,5 +113,3 @@ function at_rest_init()
 }
 
 add_action('rest_api_init', 'at_rest_init');
-
-?>
