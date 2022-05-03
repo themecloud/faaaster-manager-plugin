@@ -1,4 +1,5 @@
 <?php
+
 /**
  * Plugin Name: Manager
  * Plugin URI: https://themecloud.io
@@ -15,7 +16,8 @@ require_once('site-state.php');
 $siteState = new SiteState();
 
 
-function get_check() {
+function get_check()
+{
     $data = array(
         "code" => "ok",
     );
@@ -23,7 +25,8 @@ function get_check() {
     return new WP_REST_Response($data, 200);
 }
 
-function get_site_state() {
+function get_site_state()
+{
     global $siteState;
     $data = array(
         "code" => "ok",
@@ -33,7 +36,8 @@ function get_site_state() {
     return new WP_REST_Response($data, 200);
 }
 
-function plugin_upgrade($request) {
+function plugin_upgrade($request)
+{
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->plugin_upgrade($request);
 }
@@ -42,6 +46,22 @@ function plugin_install($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restActivate($request);
+}
+
+function plugin_list($request)
+{
+    if (!function_exists('get_plugins')) {
+        require_once ABSPATH . 'wp-admin/includes/plugin.php';
+    }
+
+    $all_plugins = get_plugins();
+
+    $data = array(
+        "code" => "ok",
+        "data" => json_encode($all_plugins)
+    );
+
+    return new WP_REST_Response($data, 200);
 }
 
 function get_db_prefix()
@@ -56,7 +76,8 @@ function get_db_prefix()
     return new WP_REST_Response($data, 200);
 }
 
-function login() {
+function login()
+{
     include('request/index.php');
 }
 
@@ -100,6 +121,13 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_install', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_install',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/plugin_list', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'plugin_list',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
