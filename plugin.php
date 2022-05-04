@@ -175,7 +175,7 @@ class PluginUpgrade
         return $result;
     }
 
-    public function restActivate($request)
+    public function restToggle($request)
     {
         $param = $request->get_query_params();
 
@@ -191,32 +191,73 @@ class PluginUpgrade
                 return new WP_REST_Response($data_for_response, 500);
             }
 
-            $plugin = $param['plugin'];
-
-
-            // this will download if needed and activate plugin
-            $res = self::activatePlugin($plugin);
-
-            if (!(is_bool($res))) {
+            if (!isset($param['status'])) {
                 $data_for_response = array(
-                    "code"    => "activate_plugin_error",
-                    "message" => $res,
+                    "code"    => "no_status_given",
+                    "message" => "Need to set status param (activate/disable)",
                     "data"    => array("status" => 500)
                 );
 
                 return new WP_REST_Response($data_for_response, 500);
             }
 
+            $plugin = $param['plugin'];
+
+            $status = $param['status'];
+
+            if ($status == "activate") {
+                $res = self::activatePlugin($plugin);
+
+                if (!(is_bool($res))) {
+                    $data_for_response = array(
+                        "code"    => "activate_plugin_error",
+                        "message" => $res,
+                        "data"    => array("status" => 500)
+                    );
+
+                    return new WP_REST_Response($data_for_response, 500);
+                }
 
 
+
+
+                $data_for_response = array(
+                    "code"    => "success",
+                    "message" => "Successfully activated plugin.",
+                    "data"    => array("status" => 200, "res" => $res)
+                );
+
+                return new WP_REST_Response($data_for_response, 200);
+            } else if ($status == "disable") {
+                // this will download if needed and activate plugin
+                $res = self::disablePlugin($plugin);
+
+                if (!(is_bool($res))) {
+                    $data_for_response = array(
+                        "code"    => "disable_plugin_error",
+                        "message" => $res,
+                        "data"    => array("status" => 500)
+                    );
+
+                    return new WP_REST_Response($data_for_response, 500);
+                }
+
+                $data_for_response = array(
+                    "code"    => "success",
+                    "message" => "Successfully deactivated plugin.",
+                    "data"    => array("status" => 200, "res" => $res)
+                );
+
+                return new WP_REST_Response($data_for_response, 200);
+            }
 
             $data_for_response = array(
-                "code"    => "success",
-                "message" => "Successfully activated plugin.",
-                "data"    => array("status" => 200, "res" => $res)
+                "code"    => "wrong_status_param",
+                "message" => "Status need to be either 'activate' or 'disable'.",
+                "data"    => array("status" => 500)
             );
 
-            return new WP_REST_Response($data_for_response, 200);
+            return new WP_REST_Response($data_for_response, 500);
         } catch (Exception $e) {
             $data_for_response = array(
                 "code"    => "unknown_error",
@@ -228,56 +269,6 @@ class PluginUpgrade
         }
     }
 
-
-    public function restDisable($request)
-    {
-        $param = $request->get_query_params();
-
-        try {
-
-            if (!isset($param['plugin'])) {
-                $data_for_response = array(
-                    "code"    => "no_plugin_given",
-                    "message" => "Need to set plugin param",
-                    "data"    => array("status" => 500)
-                );
-
-                return new WP_REST_Response($data_for_response, 500);
-            }
-
-            $plugin = $param['plugin'];
-
-
-            // this will download if needed and activate plugin
-            $res = self::activatePlugin($plugin);
-
-            if (!(is_bool($res))) {
-                $data_for_response = array(
-                    "code"    => "disable_plugin_error",
-                    "message" => $res,
-                    "data"    => array("status" => 500)
-                );
-
-                return new WP_REST_Response($data_for_response, 500);
-            }
-
-            $data_for_response = array(
-                "code"    => "success",
-                "message" => "Successfully deactivated plugin.",
-                "data"    => array("status" => 200, "res" => $res)
-            );
-
-            return new WP_REST_Response($data_for_response, 200);
-        } catch (Exception $e) {
-            $data_for_response = array(
-                "code"    => "unknown_error",
-                "message" => $e->getMessage(),
-                "data"    => array("status" => 500)
-            );
-
-            return new WP_REST_Response($data_for_response, 500);
-        }
-    }
 
     public function restInstall($request)
     {
@@ -341,7 +332,7 @@ class PluginUpgrade
 
         $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
 
-        if (is_plugin_active($plugin)) return true;
+        if (is_plugin_active($pluginBaseName)) return true;
 
         $error = activate_plugin($plugin_mainfile);
         if (is_wp_error($error)) {
@@ -367,7 +358,8 @@ class PluginUpgrade
 
         $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
 
-        if (!is_plugin_active($plugin)) return true;
+
+        if (!is_plugin_active($pluginBaseName)) return true;
 
         $error = deactivate_plugins($plugin_mainfile);
         if (is_wp_error($error)) {
