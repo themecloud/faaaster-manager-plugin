@@ -48,16 +48,10 @@ function plugin_install($request)
     return $pluginUpgrader->restInstall($request);
 }
 
-function plugin_activate($request)
+function plugin_toggle($request)
 {
     $pluginUpgrader = new PluginUpgrade();
-    return $pluginUpgrader->restActivate($request);
-}
-
-function plugin_disable($request)
-{
-    $pluginUpgrader = new PluginUpgrade();
-    return $pluginUpgrader->restDisable($request);
+    return $pluginUpgrader->restToggle($request);
 }
 
 function plugin_list($request)
@@ -137,16 +131,9 @@ function at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
-    register_rest_route($namespace, '/plugin_activate', array(
+    register_rest_route($namespace, '/plugin_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'plugin_activate',
-        'args' => array(),
-        'permission_callback' => '__return_true',
-    ));
-
-    register_rest_route($namespace, '/plugin_disable', array(
-        'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'plugin_disable',
+        'callback'  => 'plugin_toggle',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
