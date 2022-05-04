@@ -64,7 +64,7 @@ function plugin_list($request)
 
     $data = array(
         "code" => "ok",
-        "data" => json_encode($all_plugins)
+        "data" =>  array("json" => json_encode($all_plugins))
     );
 
     return new WP_REST_Response($data, 200);
