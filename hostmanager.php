@@ -47,7 +47,7 @@ function hostmanager_assets($hook)
     wp_enqueue_script('hostmanager',  WP_CONTENT_URL . $plugin_domain . "/js/script.js", array('jquery'), '1.0', true);
 
     // Envoyer une variable de PHP à JS proprement
-    wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url()]);
+    wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url(), 'nonce' => wp_create_nonce('wp_rest')]);
 }
 
 function manager_setup_menu()
@@ -83,6 +83,7 @@ function get_check()
 function toggle_mu_plugin()
 {
     global $muManager;
+
     $data = array(
         "code" => "ok",
         "data" => $muManager->togglePlugin()
@@ -161,6 +162,8 @@ function at_rest_init()
     // route url: domain.com/wp-json/$namespace/$route
     $namespace = 'hostmanager/v1';
 
+    $namespacePublic = 'public-hostmanager/v1';
+
     register_rest_route($namespace, '/site_state', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'get_site_state',
@@ -211,11 +214,13 @@ function at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
-    register_rest_route($namespace, '/toggle_plugin', array(
+    register_rest_route($namespacePublic, '/toggle_mu_plugin', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'toggle_mu_plugin',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => function () {
+            return current_user_can('administrator');
+        }
     ));
 
     register_rest_route('sso/v1', '/login', array(
