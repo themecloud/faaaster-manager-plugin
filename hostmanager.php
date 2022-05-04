@@ -45,7 +45,19 @@ function plugin_upgrade($request)
 function plugin_install($request)
 {
     $pluginUpgrader = new PluginUpgrade();
+    return $pluginUpgrader->restInstall($request);
+}
+
+function plugin_activate($request)
+{
+    $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restActivate($request);
+}
+
+function plugin_disable($request)
+{
+    $pluginUpgrader = new PluginUpgrade();
+    return $pluginUpgrader->restDisable($request);
 }
 
 function plugin_list($request)
@@ -121,6 +133,20 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_install', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'plugin_install',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/plugin_activate', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'plugin_activate',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/plugin_disable', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'plugin_disable',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));

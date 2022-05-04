@@ -193,12 +193,117 @@ class PluginUpgrade
 
             $plugin = $param['plugin'];
 
+
+            // this will download if needed and activate plugin
+            $res = self::activatePlugin($plugin);
+
+            if (!(is_bool($res))) {
+                $data_for_response = array(
+                    "code"    => "activate_plugin_error",
+                    "message" => $res,
+                    "data"    => array("status" => 500)
+                );
+
+                return new WP_REST_Response($data_for_response, 500);
+            }
+
+
+
+
+            $data_for_response = array(
+                "code"    => "success",
+                "message" => "Successfully activated plugin.",
+                "data"    => array("status" => 200, "res" => $res)
+            );
+
+            return new WP_REST_Response($data_for_response, 200);
+        } catch (Exception $e) {
+            $data_for_response = array(
+                "code"    => "unknown_error",
+                "message" => $e->getMessage(),
+                "data"    => array("status" => 500)
+            );
+
+            return new WP_REST_Response($data_for_response, 500);
+        }
+    }
+
+
+    public function restDisable($request)
+    {
+        $param = $request->get_query_params();
+
+        try {
+
+            if (!isset($param['plugin'])) {
+                $data_for_response = array(
+                    "code"    => "no_plugin_given",
+                    "message" => "Need to set plugin param",
+                    "data"    => array("status" => 500)
+                );
+
+                return new WP_REST_Response($data_for_response, 500);
+            }
+
+            $plugin = $param['plugin'];
+
+
+            // this will download if needed and activate plugin
+            $res = self::activatePlugin($plugin);
+
+            if (!(is_bool($res))) {
+                $data_for_response = array(
+                    "code"    => "disable_plugin_error",
+                    "message" => $res,
+                    "data"    => array("status" => 500)
+                );
+
+                return new WP_REST_Response($data_for_response, 500);
+            }
+
+            $data_for_response = array(
+                "code"    => "success",
+                "message" => "Successfully deactivated plugin.",
+                "data"    => array("status" => 200, "res" => $res)
+            );
+
+            return new WP_REST_Response($data_for_response, 200);
+        } catch (Exception $e) {
+            $data_for_response = array(
+                "code"    => "unknown_error",
+                "message" => $e->getMessage(),
+                "data"    => array("status" => 500)
+            );
+
+            return new WP_REST_Response($data_for_response, 500);
+        }
+    }
+
+    public function restInstall($request)
+    {
+        $param = $request->get_query_params();
+
+        try {
+
+            if (!isset($param['plugin'])) {
+                $data_for_response = array(
+                    "code"    => "no_plugin_given",
+                    "message" => "Need to set plugin param",
+                    "data"    => array("status" => 500)
+                );
+
+                return new WP_REST_Response($data_for_response, 500);
+            }
+
+            $plugin = $param['plugin'];
+
+
             // this will download if needed and activate plugin
             $res = self::activate_plugin($plugin);
 
-            if (is_wp_error($res)) {
+            if (!(is_bool($res))) {
                 $data_for_response = array(
-                    "code"    => "activate_plugin_error",
+                    "code"    => "install_plugin_error",
                     "message" => $res,
                     "data"    => array("status" => 500)
                 );
@@ -226,6 +331,58 @@ class PluginUpgrade
         }
     }
 
+    public function activatePlugin($plugin)
+    {
+        $pluginBaseName = self::is_plugin_installed($plugin);
+
+        if (!$pluginBaseName) {
+            return "Plugin not installed";
+        }
+
+        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
+
+        if (is_plugin_active($plugin)) return true;
+
+        $error = activate_plugin($plugin_mainfile);
+        if (is_wp_error($error)) {
+            return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
+                . '<br/>This probably means the main file\'s name does not match the slug.'
+                . '<br/>Check the plugins listing in wp-admin.'
+                . "<br/>\n"
+                . var_export($error->get_error_code(), true) . ': '
+                . var_export($error->get_error_message(), true)
+                . "\n";
+        }
+
+        return true;
+    }
+
+    public function disablePlugin($plugin)
+    {
+        $pluginBaseName = self::is_plugin_installed($plugin);
+
+        if (!$pluginBaseName) {
+            return "Plugin not installed";
+        }
+
+        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
+
+        if (!is_plugin_active($plugin)) return true;
+
+        $error = deactivate_plugins($plugin_mainfile);
+        if (is_wp_error($error)) {
+            return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
+                . '<br/>This probably means the main file\'s name does not match the slug.'
+                . '<br/>Check the plugins listing in wp-admin.'
+                . "<br/>\n"
+                . var_export($error->get_error_code(), true) . ': '
+                . var_export($error->get_error_message(), true)
+                . "\n";
+        }
+
+        return true;
+    }
+
     /**
      * Activates a given plugin. 
      * 
@@ -236,47 +393,41 @@ class PluginUpgrade
      */
     public function activate_plugin($plugin)
     {
+        $pluginBaseName = self::is_plugin_installed($plugin);
 
+        if ($pluginBaseName) {
+            if (is_plugin_active($pluginBaseName)) {
+                // Make sure the plugin is still there (files could be removed without wordpress noticing)
+                $error = validate_plugin($pluginBaseName);
+                if (!is_wp_error($error)) {
+                    return true;
+                }
 
-        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $plugin;
-        /* Nothing to do, when plugin already active.
-     * 
-     * WARNING: When a plugin has been removed by ftp, 
-     *          WordPress will still consider it active, 
-     *          untill the plugin list has been visited 
-     *          (and it checks the existence of it).
-     */
-
-
-        if (is_plugin_active($plugin)) {
-            // Make sure the plugin is still there (files could be removed without wordpress noticing)
-            $error = validate_plugin($plugin);
-            if (!is_wp_error($error)) {
-                return true;
+                return $error;
             }
-        }
-
-
-        // Install if neccessary.
-        if (!self::is_plugin_installed($plugin)) {
+        } else {
             $error = self::install_plugin($plugin);
             if (!empty($error)) {
                 return $error;
             }
+
+            $pluginBaseName = self::is_plugin_installed($plugin);
+
+            // Now we activate, when install has been successfull.
+            if (!$pluginBaseName) {
+                return 'Error: Plugin could not be installed (' . $plugin . '). '
+                    . '<br>This probably means there is an error in the plugin basename, '
+                    . 'or the plugin isn\'t in the wordpress repository on wordpress.org. '
+                    . '<br>Please correct the problem, and/or install and activate the plugin manually.<br>'
+                    . "\n";
+            }
         }
 
-        // Now we activate, when install has been successfull.
-        if (!self::is_plugin_installed($plugin)) {
-            return 'Error: Plugin could not be installed (' . $plugin . '). '
-                . '<br>This probably means there is an error in the plugin basename, '
-                . 'or the plugin isn\'t in the wordpress repository on wordpress.org. '
-                . '<br>Please correct the problem, and/or install and activate the plugin manually.<br>'
-                . "\n";
-        }
+        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
 
-        $error = validate_plugin($plugin);
+        $error = validate_plugin($pluginBaseName);
         if (is_wp_error($error)) {
-            return 'Error: Plugin main file has not been found (' . $plugin . ').'
+            return 'Error: Plugin main file has not been found (' . $pluginBaseName . ').'
                 . '<br/>This probably means the main file\'s name does not match the slug.'
                 . '<br/>Please check the plugins listing in wp-admin.'
                 . "<br>\n"
@@ -286,7 +437,7 @@ class PluginUpgrade
         }
         $error = activate_plugin($plugin_mainfile);
         if (is_wp_error($error)) {
-            return 'Error: Plugin has not been activated (' . $plugin . ').'
+            return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
                 . '<br/>This probably means the main file\'s name does not match the slug.'
                 . '<br/>Check the plugins listing in wp-admin.'
                 . "<br/>\n"
@@ -294,6 +445,8 @@ class PluginUpgrade
                 . var_export($error->get_error_message(), true)
                 . "\n";
         }
+
+        return true;
 
         return true;
     }
@@ -315,10 +468,13 @@ class PluginUpgrade
      */
     public function is_plugin_installed($plugin)
     {
-        $plugins = get_plugins('/' . self::get_plugin_dir($plugin));
-        if (!empty($plugins)) {
-            return true;
+        $plugins = get_plugins();
+        foreach ($plugins as $pluginBaseDomain => $pluginData) {
+            if ($pluginData["TextDomain"] == $plugin) {
+                return $pluginBaseDomain;
+            }
         }
+
         return false;
     }
 
