@@ -13,6 +13,7 @@
 require_once('plugin.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
+require_once('loginSSO.php');
 
 $siteState = new SiteState();
 $muManager = new MUPluginManager();
@@ -47,7 +48,7 @@ function hostmanager_assets($hook)
     wp_enqueue_script('hostmanager',  WP_CONTENT_URL . $plugin_domain . "/js/script.js", array('jquery'), '1.0', true);
 
     // Envoyer une variable de PHP à JS proprement
-    wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url(), 'nonce' => wp_create_nonce('wp_rest')]);
+    wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url(), 'nonce' => wp_create_nonce('wp_rest'), 'tc_token' => $_COOKIE['tc_token']]);
 }
 
 function manager_setup_menu()
@@ -80,9 +81,36 @@ function get_check()
     return new WP_REST_Response($data, 200);
 }
 
-function toggle_mu_plugin()
+function toggle_mu_plugin($request)
 {
     global $muManager;
+
+    // verify if user nonce is valid and can do something
+    if (!current_user_can('manage_options')) {
+        // if not check X-TC_TOKEN that has been set to the tc-token cookie
+        if (!$request->get_header('X-TC-TOKEN')) {
+            $data = array(
+                "code" => "no_tc_token",
+                "data" => "Need to set X-TC-Token header"
+            );
+
+            return new WP_REST_Response($data, 403);
+        }
+
+        $ssoClass = new LoginSSO();
+
+        $verified = $ssoClass->verifyTCToken($request->get_header('X-TC-TOKEN'));
+
+        // invalid tc token
+        if (!$verified) {
+            $data = array(
+                "code" => "invalid_tc_token",
+                "data" => "Invalid TC Token"
+            );
+
+            return new WP_REST_Response($data, 403);
+        }
+    }
 
     $data = array(
         "code" => "ok",
@@ -218,9 +246,7 @@ function at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'toggle_mu_plugin',
         'args' => array(),
-        'permission_callback' => function () {
-            return current_user_can('administrator');
-        }
+        'permission_callback' => '__return_true',
     ));
 
     register_rest_route('sso/v1', '/login', array(

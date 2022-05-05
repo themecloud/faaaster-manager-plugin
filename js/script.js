@@ -8,6 +8,7 @@
         type: "GET",
         beforeSend: function (xhr) {
           xhr.setRequestHeader("X-WP-Nonce", hostmanager.nonce);
+          xhr.setRequestHeader("X-TC-Token", hostmanager.tc_token);
         },
         data: {},
       }).done(function (response) {
