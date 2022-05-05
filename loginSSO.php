@@ -44,6 +44,8 @@ class LoginSSO
         header("Location: $uri");
     }
 
+    // 6368
+
     public function login($token)
     {
 
@@ -65,7 +67,6 @@ class LoginSSO
         $_SESSION["lang"] = get_locale();
 
         if ($result === false) {
-
             // redirect to err page
             header('Cache-Control: no-cache');
             header('Content-Type: text/html');
@@ -129,7 +130,7 @@ class LoginSSO
                         wp_redirect(admin_url('index.php'));
                         exit;
                     }
-                }  else {
+                } else {
                     $user_data = get_userdata($_GET["user"]);
 
                     // if user doesn't exist
@@ -167,5 +168,31 @@ class LoginSSO
 
         wp_redirect("/");
         exit;
+    }
+
+    public function verifyTCToken($token)
+    {
+        $conn = curl_init(OAUTH_GET_USER);
+
+        curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($conn, CURLOPT_HTTPHEADER, array(
+            'Authorization: Bearer ' . $token
+        ));
+
+        $result = curl_exec($conn);
+
+        curl_close($conn);
+
+        if ($result === false) {
+            return false;
+        }
+
+        $json = json_decode($result, true);
+
+        if ($json['success'] != true) {
+            return false;
+        }
+
+        return true;
     }
 }
