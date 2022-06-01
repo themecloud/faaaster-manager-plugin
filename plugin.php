@@ -151,10 +151,16 @@ class PluginUpgrade
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'update.php?action=upgrade-plugin&plugin=' . urlencode($plugin);
 
+            //  trick the upgrader into thinking that cron was running,
+
+        add_filter( 'wp_doing_cron', '__return_true' );
+
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin'));
         $upgrader = new Plugin_Upgrader($skin);
 
         $result = $upgrader->upgrade($plugin);
+        remove_filter( 'wp_doing_cron', '__return_true' );
+
 
         return $result;
     }
@@ -167,10 +173,16 @@ class PluginUpgrade
         $url = 'index.php?page=hostmanager&plugin_file=' . $pluginPath . 'action=upgrade-plugin';
 
 
+        add_filter( 'wp_doing_cron', '__return_true' );
+
+
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin', 'version'));
         $upgrader = new WP_Custom_Plugin_Upgrader($skin);
 
         $result = $upgrader->rollback($pluginPath);
+
+        remove_filter( 'wp_doing_cron', '__return_true' );
+
 
         return $result;
     }
