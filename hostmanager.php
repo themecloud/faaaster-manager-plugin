@@ -18,8 +18,8 @@ require_once('loginSSO.php');
 $siteState = new SiteState();
 $muManager = new MUPluginManager();
 
-add_action('admin_enqueue_scripts', 'hostmanager_assets');
-add_action('admin_menu', 'manager_setup_menu');
+// add_action('admin_enqueue_scripts', 'hostmanager_assets');
+// add_action('admin_menu', 'manager_setup_menu');
 
 function hostmanager_assets($hook)
 {
