@@ -10,7 +10,7 @@ require_once ABSPATH . 'wp-admin/includes/update.php';
 include_once 'rollback-plugin-upgrader.php';
 
 
-class QuietSkin extends \WP_Upgrader_Skin
+class HostManagerQuietSkin extends \WP_Upgrader_Skin
 {
     public function feedback($string, ...$args)
     { /* no output */
@@ -516,8 +516,8 @@ class PluginUpgrade
             )
         );
 
-        // using QuietSkin instead of Plugin_Installer_Skin for no output
-        $skin      = new QuietSkin(array('api' => $api));
+        // using HostManagerQuietSkin instead of Plugin_Installer_Skin for no output
+        $skin      = new HostManagerQuietSkin(array('api' => $api));
         $upgrader  = new Plugin_Upgrader($skin);
         $error     = $upgrader->install($api->download_link);
         /* 
