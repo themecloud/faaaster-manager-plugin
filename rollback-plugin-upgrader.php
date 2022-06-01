@@ -35,7 +35,6 @@ class WP_Custom_Plugin_Upgrader extends Plugin_Upgrader
         $defaults    = array(
             'clear_update_cache' => true,
         );
-        $parsed_args = wp_parse_args($args, $defaults);
 
         $this->init();
         $this->upgrade_strings();
@@ -83,7 +82,7 @@ class WP_Custom_Plugin_Upgrader extends Plugin_Upgrader
         }
 
         // Force refresh of plugin update information.
-        wp_clean_plugins_cache($parsed_args['clear_update_cache']);
+        wp_clean_plugins_cache(true);
 
         return true;
     }
@@ -211,7 +210,7 @@ class WP_Custom_Plugin_Upgrader extends Plugin_Upgrader
         wp_clean_plugins_cache($parsed_args['clear_update_cache']);
 
         /** This action is documented in wp-admin/includes/class-wp-upgrader.php */
-        /*
+    /*
         do_action(
             'upgrader_process_complete',
             $this,
