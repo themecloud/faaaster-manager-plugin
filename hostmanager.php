@@ -54,7 +54,7 @@ function hostmanager_assets($hook)
 function manager_setup_menu()
 {
 
-    add_menu_page('HostManger Plugin', 'HostManger Plugin', 'manage_options', 'hostmanager', 'manager_init');
+    add_submenu_page(null, 'HostManger Plugin', 'HostManger Plugin', 'manage_options', 'hostmanager', 'manager_init');
 }
 
 function manager_init()
