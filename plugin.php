@@ -26,7 +26,6 @@ class PluginUpgrade
         $param = $request->get_query_params();
 
         try {
-
             if (!isset($param['plugin'])) {
                 $data_for_response = array(
                     "code"    => "no_plugin_given",
@@ -37,7 +36,6 @@ class PluginUpgrade
                 return new WP_REST_Response($data_for_response, 500);
             }
             $plugin = $param['plugin'];
-
             wp_update_plugins();
 
             $current = get_site_transient('update_plugins');
@@ -63,7 +61,8 @@ class PluginUpgrade
                 // get the full path
                 foreach ($pluginUpdates as $slug => $pluginName) {
                     if ($plugin == $pluginName->update->slug) {
-                        $plugin = $pluginName->update->plugin;
+                        // $plugin = $pluginName->update->plugin;
+                        $plugin=$slug;
                         $foundPlugin = true;
                     };
                 }
@@ -76,7 +75,7 @@ class PluginUpgrade
                         "data"    => array("status" => 500)
                     );
 
-                    return new WP_REST_Response($data_for_response, 500);
+                    return new WP_REST_Response($data_for_response, 200);
                 }
 
 
@@ -151,8 +150,12 @@ class PluginUpgrade
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'update.php?action=upgrade-plugin&plugin=' . urlencode($plugin);
 
+
+
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin'));
         $upgrader = new Plugin_Upgrader($skin);
+        //$result = $upgrader->upgrade($plugin);
+        // Do the upgrade
 
         $result = $upgrader->upgrade($plugin);
 
@@ -165,7 +168,6 @@ class PluginUpgrade
 
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'index.php?page=hostmanager&plugin_file=' . $pluginPath . 'action=upgrade-plugin';
-
 
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin', 'version'));
         $upgrader = new WP_Custom_Plugin_Upgrader($skin);
@@ -223,7 +225,7 @@ class PluginUpgrade
 
                 $data_for_response = array(
                     "code"    => "success",
-                    "message" => "Successfully activated plugin.",
+                    "message" => "Successfully activated plugin : " . $plugin,
                     "data"    => array("status" => 200, "res" => $res)
                 );
 
@@ -244,7 +246,7 @@ class PluginUpgrade
 
                 $data_for_response = array(
                     "code"    => "success",
-                    "message" => "Successfully deactivated plugin.",
+                    "message" => "Successfully deactivated plugin : ".$plugin,
                     "data"    => array("status" => 200, "res" => $res)
                 );
 
@@ -333,7 +335,6 @@ class PluginUpgrade
         $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
 
         if (is_plugin_active($pluginBaseName)) return true;
-
         $error = activate_plugin($plugin_mainfile);
         if (is_wp_error($error)) {
             return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
@@ -361,23 +362,33 @@ class PluginUpgrade
 
         if (!is_plugin_active($pluginBaseName)) return true;
 
-        $error = deactivate_plugins($plugin_mainfile);
-        if (is_wp_error($error)) {
-            return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
-                . '<br/>This probably means the main file\'s name does not match the slug.'
-                . '<br/>Check the plugins listing in wp-admin.'
-                . "<br/>\n"
-                . var_export($error->get_error_code(), true) . ': '
-                . var_export($error->get_error_message(), true)
-                . "\n";
+        try {
+            $error = deactivate_plugins($plugin_mainfile);
+
+            if (is_wp_error($error)) {
+                return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
+                    . '<br/>This probably means the main file\'s name does not match the slug.'
+                    . '<br/>Check the plugins listing in wp-admin.'
+                    . "<br/>\n"
+                    . var_export($error->get_error_code(), true) . ': '
+                    . var_export($error->get_error_message(), true)
+                    . "\n";
+            }
+            return true;
+        } catch (\Exception $e) {
+            return [
+                'status' => 'error',
+                'code' => 'activation_fail',
+                'data' => $result
+            ];
         }
 
-        return true;
+
     }
 
     /**
-     * Activates a given plugin. 
-     * 
+     * Activates a given plugin.
+     *
      * If needed it dowloads and/or installs the plugin first.
      *
      * @param string $slug The plugin's basename (containing the plugin's base directory and the bootstrap filename).
@@ -445,16 +456,16 @@ class PluginUpgrade
 
     /**
      * Is plugin installed?
-     * 
+     *
      * Get_plugins() returns an array containing all installed plugins
      * with the plugin basename as key.
-     * 
+     *
      * When you pass the plugin dir to get_plugins(),
      * it will return an empty array if that plugin is not yet installed,
-     * 
-     * When the plugin is installed it will return an array with that plugins data, 
+     *
+     * When the plugin is installed it will return an array with that plugins data,
      * using the plugins main filename as key (so not the basename).
-     * 
+     *
      * @param  string  $plugin Plugin basename.
      * @return boolean         True when installed, otherwise false.
      */
@@ -520,9 +531,9 @@ class PluginUpgrade
         $skin      = new HostManagerQuietSkin(array('api' => $api));
         $upgrader  = new Plugin_Upgrader($skin);
         $error     = $upgrader->install($api->download_link);
-        /* 
+        /*
      * Check for errors...
-     * $upgrader->install() returns NULL on success, 
+     * $upgrader->install() returns NULL on success,
      * otherwise a WP_Error object.
      */
         if (is_wp_error($error)) {
