@@ -17,23 +17,16 @@ class SiteState
 
         //$plugins = get_plugins();
         $plugins = get_plugins();
-        
+
         //var_dump ($plugins);
-        $pluginsupdates = json_decode(shell_exec("wp --path=/app/www --format=json --skip-plugins  plugin list --status=active --fields=name,status,update,update_version"));
+        $pluginsupdates = get_plugin_updates();
         //var_dump ($pluginsupdates);
-        /*
-        foreach ($pluginsupdates as $pluginupdate) {
-            $pluginupdate  = (array) $pluginupdate;
-            echo $pluginupdate['name'];
-        }
-        */
         foreach ($plugins as $slug => $plugin) {
-            //echo $plugin['TextDomain'];
-            //echo array_search($plugin['TextDomain'], array_column((array) $pluginsupdates, 'name'));
-            $update = array_search($plugin['TextDomain'], array_column((array) $pluginsupdates, 'name'));
-            if ($update) {
-                $pluginupdate = (array) $pluginsupdates[$update];
-                $plugin['update'] = $pluginupdate['update_version'];
+
+            if (isset($pluginsupdates[$slug])) {
+                $pluginupdate = (array) $pluginsupdates[$slug];
+                $pluginupdate = (array) $pluginupdate['update'];
+                $plugin['update'] = $pluginupdate['new_version'];
             } else {
                 $plugin['update'] = "";
             }
@@ -45,10 +38,13 @@ class SiteState
 
         $themes = wp_get_themes(array('errors' => null));
         foreach ($themes as $slug => $theme) {
-            $state = new ProductState($slug, $slug, $theme['Name'], $theme->get('Description'), 'theme', $theme['Version'], $theme['update'], 0, 1);
-            $state->set_active($slug);
-            $state->set_screenshot(self::get_theme_screenshot_url($slug));
-            $themes_state[] = $state->get_wp_info();
+            if($theme['Version']){
+                $state = new ProductState($slug, $slug, $theme['Name'], $theme->get('Description'), 'theme', $theme['Version'], $theme['update'], 0, 1);
+                $state->set_active($slug);
+                $state->set_screenshot(self::get_theme_screenshot_url($slug));
+                $themes_state[] = $state->get_wp_info();
+            }
+
         }
 
         return array(
@@ -202,7 +198,7 @@ class SiteState
 
         public static function isDebugModeActive()
         {
-    
+
             if (defined('WP_DEBUG') && WP_DEBUG) {
                 if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG || defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY) {
                     return (1);
@@ -213,7 +209,7 @@ class SiteState
         }
         public static function isIndexable()
         {
-    
+
             if (1 === (int) get_option('blog_public')) {
                 return 0;
             } else {
