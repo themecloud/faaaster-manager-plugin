@@ -61,7 +61,6 @@ class PluginUpgrade
                 // get the full path
                 foreach ($pluginUpdates as $slug => $pluginName) {
                     if ($plugin == $pluginName->update->slug) {
-                        // $plugin = $pluginName->update->plugin;
                         $plugin=$slug;
                         $foundPlugin = true;
                     };
@@ -74,11 +73,9 @@ class PluginUpgrade
                         "message" => "This plugin is already at the latest version.",
                         "data"    => array("status" => 500)
                     );
-
                     return new WP_REST_Response($data_for_response, 200);
                 }
-
-
+                // error_log("update latest version ".$plugin." plugin path ".$pluginPath);
                 $result = self::updateLatest($plugin);
             } else {
                 $version = $param['version'];
@@ -86,9 +83,10 @@ class PluginUpgrade
                 $pluginList = get_plugins();
                 $pluginPath = "";
 
-                foreach ($pluginList as $pluginFile => $pluginValue) {
-                    if ($pluginValue['TextDomain'] == $plugin) {
-                        $pluginPath = $pluginFile;
+                foreach ($pluginList as $slug => $pluginName) {
+                    $pluginSlug=strtok($slug, '/');
+                    if ($pluginSlug == $plugin) {
+                        $pluginPath = $slug;
                     }
                 }
 
@@ -102,7 +100,7 @@ class PluginUpgrade
                     return new WP_REST_Response($data_for_response, 500);
                 }
 
-
+                // error_log("update custom version ".$plugin." plugin path ".$pluginPath." version ".$version);
                 $result = self::updateCustomVersion($plugin, $pluginPath, $version);
             }
 
@@ -149,7 +147,6 @@ class PluginUpgrade
 
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'update.php?action=upgrade-plugin&plugin=' . urlencode($plugin);
-
 
 
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin'));
@@ -472,11 +469,11 @@ class PluginUpgrade
     public function is_plugin_installed($plugin)
     {
         $plugins = get_plugins();
-        foreach ($plugins as $pluginBaseDomain => $pluginData) {
-            if ($pluginData["TextDomain"] == $plugin) {
-                return $pluginBaseDomain;
+        foreach ($plugins as $slug => $pluginName){
+            $pluginSlug=strtok($slug, '/');
+            if ($plugin == $pluginSlug) {
+                return $slug;}
             }
-        }
 
         return false;
     }
