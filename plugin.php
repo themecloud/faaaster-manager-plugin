@@ -61,8 +61,6 @@ class PluginUpgrade
                 // get the full path
                 foreach ($pluginUpdates as $slug => $pluginName) {
                     if ($plugin == $pluginName->update->slug) {
-                        error_log($pluginName->update->slug);
-                        // $plugin = $pluginName->update->plugin;
                         $plugin=$slug;
                         $foundPlugin = true;
                     };
@@ -75,11 +73,9 @@ class PluginUpgrade
                         "message" => "This plugin is already at the latest version.",
                         "data"    => array("status" => 500)
                     );
-                    error_log("update latest version ".$plugin);
                     return new WP_REST_Response($data_for_response, 200);
                 }
-
-                error_log("update latest ".$plugin);
+                // error_log("update latest version ".$plugin." plugin path ".$pluginPath);
                 $result = self::updateLatest($plugin);
             } else {
                 $version = $param['version'];
@@ -104,7 +100,7 @@ class PluginUpgrade
                     return new WP_REST_Response($data_for_response, 500);
                 }
 
-                error_log("update custom version ".$plugin." plugin path ".$pluginPath." version ".$version);
+                // error_log("update custom version ".$plugin." plugin path ".$pluginPath." version ".$version);
                 $result = self::updateCustomVersion($plugin, $pluginPath, $version);
             }
 
@@ -151,7 +147,6 @@ class PluginUpgrade
 
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'update.php?action=upgrade-plugin&plugin=' . urlencode($plugin);
-        error_log("url=".$url);
 
 
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin'));
@@ -338,7 +333,6 @@ class PluginUpgrade
 
         if (is_plugin_active($pluginBaseName)) return true;
         $error = activate_plugin($plugin_mainfile);
-        error_log($pluginBaseName. " >> " .json_encode($error));
         if (is_wp_error($error)) {
             return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
                 . '<br/>This probably means the main file\'s name does not match the slug.'
@@ -367,7 +361,6 @@ class PluginUpgrade
 
         try {
             $error = deactivate_plugins($plugin_mainfile);
-            error_log($pluginBaseName. " >> " .json_encode($error));
 
             if (is_wp_error($error)) {
                 return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
