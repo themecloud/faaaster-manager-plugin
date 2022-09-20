@@ -3,6 +3,7 @@
 
 include_once('product-state.php');
 
+
 class SiteState
 {
     private static $site_state = array();
@@ -117,6 +118,7 @@ class SiteState
         $server_software = isset($_SERVER['SERVER_SOFTWARE']) && trim($_SERVER['SERVER_SOFTWARE']) !== '' ? $_SERVER['SERVER_SOFTWARE'] : 'unknown';
         $debug_mode = self::isDebugModeActive();
         $indexable = self::isIndexable();
+        $autoload_size = self::getAutoloadSize();
 
         $site_info = array(
             'platform'            => 'wordpress',
@@ -141,7 +143,8 @@ class SiteState
             ),
             "is_network"          => ((is_multisite()) ? 1 : 0),
             "debug_mode"     => $debug_mode,
-            "indexable"     => $indexable
+            "indexable"     => $indexable,
+            "autoload_size" => $autoload_size
         );
 
         if (is_multisite() && is_numeric($blog_id)) {
@@ -215,5 +218,12 @@ class SiteState
             } else {
                 return 1;
             }
+        }
+
+        private static function getAutoloadSize(){
+            require_once ABSPATH . 'wp-load.php';
+            global $wpdb;
+            $autoload_size = $wpdb->get_results("SELECT SUM(LENGTH(option_value)) FROM wp_options WHERE autoload = 'yes'");
+            return $autoload_size;
         }
 }
