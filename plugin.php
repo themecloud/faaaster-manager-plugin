@@ -150,7 +150,6 @@ class PluginUpgrade
 
         $nonce = 'upgrade-plugin_' . $plugin;
         $url = 'update.php?action=upgrade-plugin&plugin=' . urlencode($plugin);
-        error_log("url=".$url);
 
         $skin     = new Automatic_Upgrader_Skin(compact('nonce', 'url', 'plugin'));
         $upgrader = new Plugin_Upgrader($skin);
@@ -336,7 +335,6 @@ class PluginUpgrade
 
         if (is_plugin_active($pluginBaseName)) return true;
         $error = activate_plugin($plugin_mainfile);
-        error_log($pluginBaseName. " >> " .json_encode($error));
         if (is_wp_error($error)) {
             return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
                 . '<br/>This probably means the main file\'s name does not match the slug.'
@@ -365,7 +363,6 @@ class PluginUpgrade
 
         try {
             $error = deactivate_plugins($plugin_mainfile);
-            error_log($pluginBaseName. " >> " .json_encode($error));
 
             if (is_wp_error($error)) {
                 return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
