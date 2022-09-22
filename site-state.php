@@ -223,7 +223,9 @@ class SiteState
         private static function getAutoloadSize(){
             require_once ABSPATH . 'wp-load.php';
             global $wpdb;
-            $autoload_size = $wpdb->get_results("SELECT SUM(LENGTH(option_value)) FROM wp_options WHERE autoload = 'yes'");
-            return $autoload_size;
+            $query= "SELECT SUM(LENGTH(option_value)) as alsize FROM wp_options WHERE autoload = 'yes'";
+
+            $autoload_size=$wpdb->get_results($query);
+            return $autoload_size[0]->alsize;
         }
 }
