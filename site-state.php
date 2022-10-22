@@ -12,28 +12,19 @@ class SiteState
     {
         $plugins_state = array();
         $themes_state = array();
+        $plugins_cli = json_decode(shell_exec('wp plugin list --skip-plugins --format=json --fields="name, status, description, update, title, version, file, update_version, update_package"'));
+
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
-        //$plugins = get_plugins();
         $plugins = get_plugins();
 
-        //var_dump ($plugins);
-        $pluginsupdates = get_plugin_updates();
-        //var_dump ($pluginsupdates);
-        foreach ($plugins as $slug => $plugin) {
-
-            if (isset($pluginsupdates[$slug])) {
-                $pluginupdate = (array) $pluginsupdates[$slug];
-                $pluginupdate = (array) $pluginupdate['update'];
-                $plugin['update'] = $pluginupdate['new_version'];
-            } else {
-                $plugin['update'] = "";
-            }
-
-            $state = new ProductState($slug, $slug, $plugin['Title'], $plugin['Description'], 'plugin', $plugin['Version'], $plugin['update'], 1);
-            $state->set_active($slug);
+        $plugins_cli=(array) $plugins_cli;
+        foreach ($plugins_cli as $plugin) {
+            $plugin=(array) $plugin;
+            $plugin['active'] = $plugin['status'] == 'active' ? "1" :"0";
+            $state = new ProductState($plugin['file'], $plugin['file'], $plugin['title'], $plugin['description'], 'plugin', $plugin['version'], $plugin['update_version'], 1, $plugin['active']);
             $plugins_state[] = $state->get_wp_info();
         }
 
@@ -167,7 +158,7 @@ class SiteState
          */
         public static function get_fs_method()
         {
-            require_once(ABSPATH . 'wp-admin/includes/file.php');
+             require_once(ABSPATH . 'wp-admin/includes/file.php');
             require_once(ABSPATH . 'wp-admin/includes/misc.php'); // extract_from_markers() wp-super-cache deactivation fatal error fix
 
             return get_filesystem_method();
@@ -223,7 +214,8 @@ class SiteState
         private static function getAutoloadSize(){
             require_once ABSPATH . 'wp-load.php';
             global $wpdb;
-            $query= "SELECT SUM(LENGTH(option_value)) as alsize FROM wp_options WHERE autoload = 'yes'";
+            $prefix=$wpdb->prefix;
+            $query= "SELECT SUM(LENGTH(option_value)) as alsize FROM ".$prefix."options WHERE autoload = 'yes'";
 
             $autoload_size=$wpdb->get_results($query);
             return $autoload_size[0]->alsize;
