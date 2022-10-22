@@ -207,49 +207,39 @@ class PluginUpgrade
             $status = $param['status'];
 
             if ($status == "activate") {
-                $res = self::activatePlugin($plugin);
-
-                if (!(is_bool($res))) {
+                exec('wp plugin activate --skip-plugins ' . $plugin, $output,$return_var );
+                if($return_var==0){
                     $data_for_response = array(
-                        "code"    => "activate_plugin_error",
-                        "message" => $res,
-                        "data"    => array("status" => 500)
+                        "code"    => "success",
+                        "message" => $output[0],
+                        "data"    => array("status" => 200, "res" => true)
                     );
-
+                    return new WP_REST_Response($data_for_response, 200);
+                }else{
+                    $data_for_response = array(
+                        "code"    => "error",
+                        "message" => $output[0],
+                        "data"    => array("status" => 500, "res" => false)
+                    );
                     return new WP_REST_Response($data_for_response, 500);
                 }
-
-
-
-
-                $data_for_response = array(
-                    "code"    => "success",
-                    "message" => "Successfully activated plugin : " . $plugin,
-                    "data"    => array("status" => 200, "res" => $res)
-                );
-
-                return new WP_REST_Response($data_for_response, 200);
             } else if ($status == "disable") {
-                // this will download if needed and activate plugin
-                $res = self::disablePlugin($plugin);
-
-                if (!(is_bool($res))) {
+                exec('wp plugin deactivate --skip-plugins ' . $plugin, $output,$return_var );
+                if($return_var==0){
                     $data_for_response = array(
-                        "code"    => "disable_plugin_error",
-                        "message" => $res,
-                        "data"    => array("status" => 500)
+                        "code"    => "success",
+                        "message" => $output[0],
+                        "data"    => array("status" => 200, "res" => true)
                     );
-
+                    return new WP_REST_Response($data_for_response, 200);
+                }else{
+                    $data_for_response = array(
+                        "code"    => "error",
+                        "message" => $output[0],
+                        "data"    => array("status" => 500, "res" => false)
+                    );
                     return new WP_REST_Response($data_for_response, 500);
                 }
-
-                $data_for_response = array(
-                    "code"    => "success",
-                    "message" => "Successfully deactivated plugin : ".$plugin,
-                    "data"    => array("status" => 200, "res" => $res)
-                );
-
-                return new WP_REST_Response($data_for_response, 200);
             }
 
             $data_for_response = array(
