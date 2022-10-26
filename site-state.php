@@ -22,10 +22,12 @@ class SiteState
 
         $plugins_cli=(array) $plugins_cli;
         foreach ($plugins_cli as $plugin) {
+            if($plugin->status != "must-use" && $plugin->status != "dropin"):
             $plugin=(array) $plugin;
             $plugin['active'] = $plugin['status'] == 'active' ? "1" :"0";
             $state = new ProductState($plugin['file'], $plugin['file'], $plugin['title'], $plugin['description'], 'plugin', $plugin['version'], $plugin['update_version'], 1, $plugin['active']);
             $plugins_state[] = $state->get_wp_info();
+            endif;
         }
 
         $themes = wp_get_themes(array('errors' => null));
