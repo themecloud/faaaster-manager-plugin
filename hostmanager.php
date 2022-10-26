@@ -9,6 +9,17 @@
  * Author URI: https://themecloud.io
  * License: GPLv2 or later
  */
+require_once ABSPATH . 'wp-load.php';
+
+if (strpos($_SERVER[ 'REQUEST_URI' ], 'hostmanager') !== false) {
+    add_filter('option_active_plugins', 'skipplugins_plugins_filter');
+    function skipplugins_plugins_filter($plugins) {
+        foreach ($plugins as $i => $plugin) {
+           unset($plugins[$i]);
+       }
+       return $plugins;
+    }
+}
 
 require_once('plugin.php');
 require_once('site-state.php');
