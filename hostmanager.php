@@ -63,7 +63,7 @@ function manager_init()
     global $muManager;
 
     $html = '
-    <p>Toggle Benchmark plugin</p>    
+    <p>Toggle Benchmark plugin</p>
         <input type="submit" id="togglePlugin" name="togglePlugin"
                 class="button" value="Toggle plugin" />
 
@@ -258,3 +258,26 @@ function at_rest_init()
 }
 
 add_action('rest_api_init', 'at_rest_init');
+
+
+// On désactive les indices de connexion WP
+function no_wordpress_errors(){
+    return 'Something is wrong!';
+}
+add_filter( 'login_errors', 'no_wordpress_errors' );
+
+// On cache la version de WP
+
+function remove_wordpress_version() {
+    return '';
+}
+add_filter('the_generator', 'remove_wordpress_version');
+
+// Pick out the version number from scripts and styles
+function remove_version_from_style_js( $src ) {
+    if ( strpos( $src, 'ver=' . get_bloginfo( 'version' ) ) )
+    $src = remove_query_arg( 'ver', $src );
+    return $src;
+}
+add_filter( 'style_loader_src', 'remove_version_from_style_js');
+add_filter( 'script_loader_src', 'remove_version_from_style_js');
