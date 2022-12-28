@@ -9,15 +9,17 @@
  * Author URI: https://themecloud.io
  * License: GPLv2 or later
  */
-require_once ABSPATH . 'wp-load.php';
 
-if (strpos($_SERVER[ 'REQUEST_URI' ], 'hostmanager') !== false) {
+
+if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
+    require_once ABSPATH . 'wp-load.php';
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
-    function skipplugins_plugins_filter($plugins) {
+    function skipplugins_plugins_filter($plugins)
+    {
         foreach ($plugins as $i => $plugin) {
-           unset($plugins[$i]);
-       }
-       return $plugins;
+            unset($plugins[$i]);
+        }
+        return $plugins;
     }
 }
 
@@ -272,23 +274,26 @@ add_action('rest_api_init', 'at_rest_init');
 
 
 // On désactive les indices de connexion WP
-function no_wordpress_errors(){
+function no_wordpress_errors()
+{
     return 'Something is wrong!';
 }
-add_filter( 'login_errors', 'no_wordpress_errors' );
+add_filter('login_errors', 'no_wordpress_errors');
 
 // On cache la version de WP
 
-function remove_wordpress_version() {
+function remove_wordpress_version()
+{
     return '';
 }
 add_filter('the_generator', 'remove_wordpress_version');
 
 // Pick out the version number from scripts and styles
-function remove_version_from_style_js( $src ) {
-    if ( strpos( $src, 'ver=' . get_bloginfo( 'version' ) ) )
-    $src = remove_query_arg( 'ver', $src );
+function remove_version_from_style_js($src)
+{
+    if (strpos($src, 'ver=' . get_bloginfo('version')))
+        $src = remove_query_arg('ver', $src);
     return $src;
 }
-add_filter( 'style_loader_src', 'remove_version_from_style_js');
-add_filter( 'script_loader_src', 'remove_version_from_style_js');
+add_filter('style_loader_src', 'remove_version_from_style_js');
+add_filter('script_loader_src', 'remove_version_from_style_js');
