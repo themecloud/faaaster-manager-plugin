@@ -106,7 +106,7 @@ class LoginSSO
         if ($user_data === false) {
             $admin_users = get_users(array('role' => 'administrator'));
             if (count($admin_users)) {
-                if (!isset($_GET["user"]) && count($admin_users) > 1) {
+                if (count($admin_users) > 1) {
                     // redirect to choose user
                     $users = array();
 
