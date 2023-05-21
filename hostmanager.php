@@ -17,7 +17,7 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     function skipplugins_plugins_filter($plugins)
     {
         foreach ($plugins as $i => $plugin) {
-            if ($plugin != "simply-static/simply-static.php" && $plugin != "advanced-custom-fields/acf.php") {
+            if ($plugin != "simply-static/simply-static.php" && $plugin != "advanced-custom-fields/acf.php" && $plugin != "advanced-custom-fields-pro/acf.php") {
                 unset($plugins[$i]);
             }
         }
