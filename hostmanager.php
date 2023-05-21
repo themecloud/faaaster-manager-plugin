@@ -17,7 +17,9 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     function skipplugins_plugins_filter($plugins)
     {
         foreach ($plugins as $i => $plugin) {
-            unset($plugins[$i]);
+            if ($plugin != "simply-static/simply-static.php" && $plugin != "advanced-custom-fields/acf.php") {
+                unset($plugins[$i]);
+            }
         }
         return $plugins;
     }
@@ -33,6 +35,12 @@ $muManager = new MUPluginManager();
 
 // add_action('admin_enqueue_scripts', 'hostmanager_assets');
 // add_action('admin_menu', 'manager_setup_menu');
+
+// [WIP] Hook after static push
+add_action('ss_after_cleanup', function () {
+    $webhook_url = 'https://domains.themecloud.io/api/statichook';
+    wp_remote_get($webhook_url, array());
+});
 
 function hostmanager_assets($hook)
 {
@@ -195,6 +203,13 @@ function login()
     include('request/index.php');
 }
 
+function ssp_run_static_export()
+{
+    // Full static export
+    $simply_static = Simply_Static\Plugin::instance();
+    $simply_static->run_static_export();
+}
+
 /**
  * at_rest_init
  */
@@ -251,6 +266,13 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_list', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'plugin_list',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/staticpush', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'ssp_run_static_export',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
