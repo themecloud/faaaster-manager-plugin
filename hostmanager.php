@@ -94,6 +94,49 @@ function get_check()
     return new WP_REST_Response($data, 200);
 }
 
+function manager_do_remote_get(string $url, array $args = array())
+{
+    $headers = $args['headers'];
+    $headers = array(
+        "X-Purge-Cache:true",
+        "Host:" . wp_parse_url(home_url())['host'],
+    );
+
+    $ch = curl_init();
+
+    //this will set the minimum time to wait before proceed to the next line to 100 milliseconds
+    curl_setopt($ch, CURLOPT_URL, "$url");
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_COOKIESESSION, true);
+    curl_setopt($ch, CURLOPT_COOKIE, '"trial_bypass":"true"');
+    curl_setopt($ch, CURLOPT_TIMEOUT_MS, 100);
+    curl_setopt($ch, CURLOPT_HEADER, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+
+    curl_exec($ch);
+
+    //this line will be executed after 100 milliseconds
+
+    curl_close($ch);
+}
+
+function manager_clear_all_cache()
+{
+    // OP Cache
+    opcache_reset();
+
+    // New Method fcgi
+    $_url_purge      = "http://localhost/purge-all";
+    manager_do_remote_get($_url_purge);
+
+    // Pagespeed
+    touch('/tmp/pagespeed/cache.flush');
+
+    // Cache objet WordPress
+    wp_cache_flush();
+}
+
 function toggle_mu_plugin($request)
 {
     global $muManager;
@@ -178,6 +221,17 @@ function plugin_list($request)
     return new WP_REST_Response($data, 200);
 }
 
+function clear_cache($request)
+{
+    $clear_cache = manager_clear_all_cache();
+
+    $data = array(
+        "code" => "ok",
+    );
+
+    return new WP_REST_Response($data, 200);
+}
+
 function get_db_prefix()
 {
     require_once ABSPATH . "wp-blog-header.php";
@@ -251,6 +305,13 @@ function at_rest_init()
     register_rest_route($namespace, '/plugin_list', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'plugin_list',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/clear_cache', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'clear_cache',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
