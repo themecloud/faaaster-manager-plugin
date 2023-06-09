@@ -23,6 +23,20 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     }
 }
 
+function disable_filters_for_manager_plugin( $response ) {
+    $request_url = $_SERVER['REQUEST_URI'];
+    // Check if the URL contains "manager-plugin"
+    if ( strpos($request_url, 'hostmanager') !== false OR strpos($request_url, 'sso') !== false) {
+        error_log("disable filters");
+        // Remove all filters on the "rest_not_logged_in" hook
+        remove_all_filters( 'rest_not_logged_in' );
+        remove_all_filters( 'rest_authentication_errors' );
+    }
+
+    return $response;
+}
+add_action( 'rest_api_init', 'disable_filters_for_manager_plugin' );
+
 require_once('plugin.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
@@ -33,18 +47,6 @@ $muManager = new MUPluginManager();
 
 // add_action('admin_enqueue_scripts', 'hostmanager_assets');
 // add_action('admin_menu', 'manager_setup_menu');
-
-function disable_filters_for_manager_plugin( $response ) {
-    $request_url = $_SERVER['REQUEST_URI'];
-    // Check if the URL contains "manager-plugin"
-    if ( strpos($request_url, 'hostmanager/v1/') !== false OR strpos($request_url, 'sso/v1/') !== false) {
-        // Remove all filters on the "rest_not_logged_in" hook
-        remove_all_filters( 'rest_not_logged_in' );
-    }
-
-    return $response;
-}
-add_filter( 'rest_post_dispatch', 'disable_filters_for_manager_plugin' );
 
 function hostmanager_assets($hook)
 {
