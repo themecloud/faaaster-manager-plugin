@@ -34,6 +34,18 @@ $muManager = new MUPluginManager();
 // add_action('admin_enqueue_scripts', 'hostmanager_assets');
 // add_action('admin_menu', 'manager_setup_menu');
 
+function disable_filters_for_manager_plugin( $response ) {
+    $request_url = $_SERVER['REQUEST_URI'];
+    // Check if the URL contains "manager-plugin"
+    if ( strpos($request_url, 'hostmanager/v1/') !== false OR strpos($request_url, 'sso/v1/') !== false) {
+        // Remove all filters on the "rest_not_logged_in" hook
+        remove_all_filters( 'rest_not_logged_in' );
+    }
+
+    return $response;
+}
+add_filter( 'rest_post_dispatch', 'disable_filters_for_manager_plugin' );
+
 function hostmanager_assets($hook)
 {
 
