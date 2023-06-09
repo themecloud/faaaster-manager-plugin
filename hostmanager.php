@@ -279,7 +279,7 @@ function at_rest_init()
     ));
 
 
-    register_rest_route($namespacePublic, '/get_check', array(
+    register_rest_route($namespace, '/get_check', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'get_check',
         'args' => array(),
