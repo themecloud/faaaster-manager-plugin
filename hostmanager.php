@@ -23,18 +23,19 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     }
 }
 
-function disable_filters_for_manager_plugin( $response ) {
+function disable_filters_for_manager_plugin($response)
+{
     $request_url = $_SERVER['REQUEST_URI'];
     // Check if the URL contains "manager-plugin"
-    if ( strpos($request_url, 'hostmanager') !== false OR strpos($request_url, 'sso') !== false) {
+    if (strpos($request_url, 'hostmanager') !== false or strpos($request_url, 'sso') !== false) {
         // Remove all filters on the "rest_not_logged_in" hook
-        remove_all_filters( 'rest_not_logged_in' );
-        remove_all_filters( 'rest_authentication_errors' );
+        remove_all_filters('rest_not_logged_in');
+        remove_all_filters('rest_authentication_errors');
     }
 
     return $response;
 }
-add_action( 'rest_api_init', 'disable_filters_for_manager_plugin' );
+add_action('rest_api_init', 'disable_filters_for_manager_plugin');
 
 require_once('plugin.php');
 require_once('site-state.php');
@@ -354,13 +355,14 @@ function no_wordpress_errors()
 }
 add_filter('login_errors', 'no_wordpress_errors');
 
-// On cache la version de WP
 
+// On cache la version de WP
 function remove_wordpress_version()
 {
     return '';
 }
 add_filter('the_generator', 'remove_wordpress_version');
+
 
 // Pick out the version number from scripts and styles
 function remove_version_from_style_js($src)
@@ -371,3 +373,80 @@ function remove_version_from_style_js($src)
 }
 add_filter('style_loader_src', 'remove_version_from_style_js');
 add_filter('script_loader_src', 'remove_version_from_style_js');
+
+
+// Manage Cloudflare cache
+
+if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && defined('CFCACHE_ENABLED') && CFCACHE_ENABLED) {
+    function cf_purge_all()
+    {
+        // error_log("Purge everything");
+        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $data = array(
+            'scope' => 'everything',
+        );
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
+            ),
+        );
+        // Make the API call
+        $response = wp_remote_post($url, $args);
+
+        // Check for errors and handle the response
+        if (is_wp_error($response)) {
+            echo "Error: " . $response->get_error_message();
+        } else {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+
+            if ($response_code === 200) {
+                // error_log("API call successful! Response: " . $response_body);
+            } else {
+                // error_log("API call failed with response code $response_code. Response: " . $response_body);
+            }
+        }
+    }
+
+    function cf_purge_urls($urls)
+    {
+
+        // error_log("Purge urls" . JSON_ENCODE($urls));
+        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $data = array(
+            'scope' => 'urls',
+            'urls' => array($urls)
+        );
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
+            ),
+        );
+
+        // Make the API call
+        $response = wp_remote_post($url, $args);
+
+        // Check for errors and handle the response
+        if (is_wp_error($response)) {
+            echo "Error: " . $response->get_error_message();
+        } else {
+            $response_code = wp_remote_retrieve_response_code($response);
+            $response_body = wp_remote_retrieve_body($response);
+
+            if ($response_code === 200) {
+                // error_log("API call successful! Response: " . $response_body);
+            } else {
+                // error_log("API call failed with response code $response_code. Response: " . $response_body);
+            }
+        }
+    }
+
+    add_action('rt_nginx_helper_after_fastcgi_purge_all', 'cf_purge_all', PHP_INT_MAX);
+    add_action('rt_nginx_helper_fastcgi_purge_url', 'cf_purge_urls', PHP_INT_MAX, 1);
+}
