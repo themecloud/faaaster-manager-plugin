@@ -18,27 +18,24 @@ class SiteState
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
 
-        $plugins = get_plugins();
-
-        $plugins_cli=(array) $plugins_cli;
+        $plugins_cli = (array) $plugins_cli;
         foreach ($plugins_cli as $plugin) {
-            if($plugin->status != "must-use" && $plugin->status != "dropin"):
-            $plugin=(array) $plugin;
-            $plugin['active'] = $plugin['status'] == 'active' ? "1" :"0";
-            $state = new ProductState($plugin['file'], $plugin['file'], $plugin['title'], $plugin['description'], 'plugin', $plugin['version'], $plugin['update_version'], 1, $plugin['active']);
-            $plugins_state[] = $state->get_wp_info();
+            if ($plugin->status != "must-use" && $plugin->status != "dropin") :
+                $plugin = (array) $plugin;
+                $plugin['active'] = $plugin['status'] == 'active' ? "1" : "0";
+                $state = new ProductState($plugin['file'], $plugin['file'], $plugin['title'], $plugin['description'], 'plugin', $plugin['version'], $plugin['update_version'], 1, $plugin['active']);
+                $plugins_state[] = $state->get_wp_info();
             endif;
         }
 
         $themes = wp_get_themes(array('errors' => null));
         foreach ($themes as $slug => $theme) {
-            if($theme['Version']){
+            if ($theme['Version']) {
                 $state = new ProductState($slug, $slug, $theme['Name'], $theme->get('Description'), 'theme', $theme['Version'], $theme['update'], 0, 1);
                 $state->set_active($slug);
                 $state->set_screenshot(self::get_theme_screenshot_url($slug));
                 $themes_state[] = $state->get_wp_info();
             }
-
         }
 
         return array(
@@ -155,71 +152,72 @@ class SiteState
         return self::$site_state;
     }
 
-            /**
-         * @return string direct|ssh2|ftpext|ftpsockets
-         */
-        public static function get_fs_method()
-        {
-             require_once(ABSPATH . 'wp-admin/includes/file.php');
-            require_once(ABSPATH . 'wp-admin/includes/misc.php'); // extract_from_markers() wp-super-cache deactivation fatal error fix
+    /**
+     * @return string direct|ssh2|ftpext|ftpsockets
+     */
+    public static function get_fs_method()
+    {
+        require_once(ABSPATH . 'wp-admin/includes/file.php');
+        require_once(ABSPATH . 'wp-admin/includes/misc.php'); // extract_from_markers() wp-super-cache deactivation fatal error fix
 
-            return get_filesystem_method();
+        return get_filesystem_method();
+    }
+
+    public static function check_fs_configs()
+    {
+
+        $fs_method = self::get_fs_method();
+
+        if ($fs_method == "direct") {
+            return true;
         }
 
-        public static function check_fs_configs()
-        {
+        $credentials['connection_type'] = $fs_method;
+        $credentials['hostname'] = (defined('FTP_HOST')) ? FTP_HOST : "";
+        $credentials['username'] = (defined('FTP_USER')) ? FTP_USER : "";
+        $credentials['password'] = (defined('FTP_PASS')) ? FTP_PASS : "";
+        $credentials['public_key'] = (defined('FTP_PUBKEY')) ? FTP_PUBKEY : "";
+        $credentials['private_key'] = (defined('FTP_PRIKEY')) ? FTP_PRIKEY : "";
 
-            $fs_method = self::get_fs_method();
+        if (
+            (!empty($credentials['password']) && !empty($credentials['username']) && !empty($credentials['hostname'])) ||
+            ('ssh' == $credentials['connection_type'] && !empty($credentials['public_key']) && !empty($credentials['private_key']))
+        ) {
+            return true;
+        } else {
+            return false;
+        }
+    }
 
-            if ($fs_method == "direct") {
-                return true;
+    public static function isDebugModeActive()
+    {
+
+        if (defined('WP_DEBUG') && WP_DEBUG) {
+            if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG || defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY) {
+                return (1);
             }
-
-            $credentials['connection_type'] = $fs_method;
-            $credentials['hostname'] = (defined('FTP_HOST')) ? FTP_HOST : "";
-            $credentials['username'] = (defined('FTP_USER')) ? FTP_USER : "";
-            $credentials['password'] = (defined('FTP_PASS')) ? FTP_PASS : "";
-            $credentials['public_key'] = (defined('FTP_PUBKEY')) ? FTP_PUBKEY : "";
-            $credentials['private_key'] = (defined('FTP_PRIKEY')) ? FTP_PRIKEY : "";
-
-            if (
-                (!empty($credentials['password']) && !empty($credentials['username']) && !empty($credentials['hostname'])) ||
-                ('ssh' == $credentials['connection_type'] && !empty($credentials['public_key']) && !empty($credentials['private_key']))
-            ) {
-                return true;
-            } else {
-                return false;
-            }
+        } else {
+            return (0);
         }
+    }
+    public static function isIndexable()
+    {
 
-        public static function isDebugModeActive()
-        {
-
-            if (defined('WP_DEBUG') && WP_DEBUG) {
-                if (defined('WP_DEBUG_LOG') && WP_DEBUG_LOG || defined('WP_DEBUG_DISPLAY') && WP_DEBUG_DISPLAY) {
-                    return (1);
-                }
-            } else {
-                return (0);
-            }
+        if (1 === (int) get_option('blog_public')) {
+            return 0;
+        } else {
+            return 1;
         }
-        public static function isIndexable()
-        {
+    }
 
-            if (1 === (int) get_option('blog_public')) {
-                return 0;
-            } else {
-                return 1;
-            }
-        }
+    private static function getAutoloadSize()
+    {
+        require_once ABSPATH . 'wp-load.php';
+        global $wpdb;
+        $prefix = $wpdb->prefix;
+        $query = "SELECT SUM(LENGTH(option_value)) as alsize FROM " . $prefix . "options WHERE autoload = 'yes'";
 
-        private static function getAutoloadSize(){
-            require_once ABSPATH . 'wp-load.php';
-            global $wpdb;
-            $prefix=$wpdb->prefix;
-            $query= "SELECT SUM(LENGTH(option_value)) as alsize FROM ".$prefix."options WHERE autoload = 'yes'";
-
-            $autoload_size=$wpdb->get_results($query);
-            return $autoload_size[0]->alsize;
-        }
+        $autoload_size = $wpdb->get_results($query);
+        return $autoload_size[0]->alsize;
+    }
 }

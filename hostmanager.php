@@ -10,6 +10,12 @@
  * License: GPLv2 or later
  */
 
+$app_id = getenv('APP_ID');
+$instance_name = getenv('INSTANCE_NAME');
+$wp_api_key = getenv('WP_API_KEY');
+$cfcache_enabled = getenv('CFCACHE_ENABLED');
+
+
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     require_once ABSPATH . 'wp-load.php';
@@ -347,41 +353,44 @@ function at_rest_init()
 
 add_action('rest_api_init', 'at_rest_init');
 
-
+if (defined('HIDE_WP_ERRORS') == false) {
+    define('HIDE_WP_ERRORS', true);
+}
 // On désactive les indices de connexion WP
-function no_wordpress_errors()
+function faaaster_no_wordpress_errors()
 {
     return 'Something is wrong!';
 }
-add_filter('login_errors', 'no_wordpress_errors');
-
+if (HIDE_SSO_LINK != false) {
+    add_filter('login_errors', 'faaaster_no_wordpress_errors');
+}
 
 // On cache la version de WP
-function remove_wordpress_version()
+function faaaster_remove_wordpress_version()
 {
     return '';
 }
-add_filter('the_generator', 'remove_wordpress_version');
+add_filter('the_generator', 'faaaster_remove_wordpress_version');
 
 
 // Pick out the version number from scripts and styles
-function remove_version_from_style_js($src)
+function faaaster_remove_version_from_style_js($src)
 {
     if (strpos($src, 'ver=' . get_bloginfo('version')))
         $src = remove_query_arg('ver', $src);
     return $src;
 }
-add_filter('style_loader_src', 'remove_version_from_style_js');
-add_filter('script_loader_src', 'remove_version_from_style_js');
+add_filter('style_loader_src', 'faaaster_remove_version_from_style_js');
+add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 
 // Manage Cloudflare cache
 
-if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && defined('CFCACHE_ENABLED') && CFCACHE_ENABLED) {
-    function cf_purge_all()
+if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
+    function cf_purge_all($app_id, $instance_name, $wp_api_key)
     {
         // error_log("Purge everything");
-        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://domains.themecloud.io/api/applications/" . $app_id . "/instances/" . $instance_name . "/cloudflare";
         $data = array(
             'scope' => 'everything',
         );
@@ -390,7 +399,7 @@ if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && de
             'body' => json_encode($data),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
+                'Authorization' => 'Bearer ' . $wp_api_key, // Add the Authorization header with the API key
             ),
         );
         // Make the API call
@@ -411,11 +420,11 @@ if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && de
         }
     }
 
-    function cf_purge_urls($urls)
+    function cf_purge_urls($app_id, $instance_name, $wp_api_key, $urls)
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
-        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://domains.themecloud.io/api/applications/" . $app_id . "/instances/" . $instance_name . "/cloudflare";
         $data = array(
             'scope' => 'urls',
             'urls' => array($urls)
@@ -425,7 +434,7 @@ if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && de
             'body' => json_encode($data),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
+                'Authorization' => 'Bearer ' . $wp_api_key, // Add the Authorization header with the API key
             ),
         );
 
@@ -449,4 +458,68 @@ if (defined('WP_API_KEY') && defined('APP_ID') && defined('INSTANCE_NAME') && de
 
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'cf_purge_urls', PHP_INT_MAX, 1);
+}
+
+
+/**
+ * Trigger webhook when error occurs
+ *
+ * @param int $num
+ * @param string $str
+ * @param string $file
+ * @param string $line
+ * @param null $context
+ * @return void
+ */
+
+function faaaster_log_error($app_id, $instance_name, $wp_api_key, $num, $str, $file, $line, $context = null)
+{
+    error_log("Got fatal error!");
+    $url = "https://domains.themecloud.io/api/webhook-alert/";
+    $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/webhook-fatalalert";
+    $data = array(
+        'num' => $num,
+        'error' => $str,
+        'file' => $file,
+        'line' => $line,
+        'url' => $_SERVER['REQUEST_URI'],
+        'app_id' => $app_id,
+        'instance' => $instance_name,
+    );
+    // Define the request arguments
+    $args = array(
+        'body' => json_encode($data),
+        'headers' => array(
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' .  $wp_api_key, // Add the Authorization header with the API key
+        ),
+    );
+    // Make the API call
+    if (!wp_remote_post($url, $args)) {
+        error_log("Fatal alert error: " . $response->get_error_message());
+    }
+
+    // Restore the old handler
+    restore_error_handler();
+} // End faaaster_log_error()
+if ($app_id && $instance_name && $wp_api_key) {
+    set_error_handler('faaaster_log_error');
+}
+
+
+/**
+ * Checks for fatal errors and parse errors, work around for set_error_handler not working on them.
+ *
+ * @return void
+ */
+function faaaster_check_for_fatal($app_id, $instance_name, $wp_api_key)
+{
+    $error = error_get_last();
+    $additional_errors = [E_ERROR, E_PARSE];
+    if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
+        faaaster_log_error($app_id, $instance_name, $wp_api_key, $error['type'], $error['message'], $error['file'], $error['line']);
+    }
+} // End faaaster_check_for_fatal()
+if ($app_id && $instance_name && $wp_api_key) {
+    register_shutdown_function('faaaster_check_for_fatal');
 }
