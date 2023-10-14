@@ -9,13 +9,17 @@
  * Author URI: https://themecloud.io
  * License: GPLv2 or later
  */
+if (!file_exists('/app/.include/manager.php')) {
+    exit;
+}
+
+require_once('/app/.include/manager.php');
 
 $app_id = defined('APP_ID') ? APP_ID : false;
 $instance_name = defined('INSTANCE_NAME') ? INSTANCE_NAME : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : false;
-
-
+$app_env = ['APP_ID' => $app_id, 'INSTANCE_NAME' => $instance_name, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     require_once ABSPATH . 'wp-load.php';
@@ -512,14 +516,14 @@ if ($app_id && $instance_name && $wp_api_key) {
  *
  * @return void
  */
-function faaaster_check_for_fatal($app_id, $instance_name, $wp_api_key)
+function faaaster_check_for_fatal($app_env)
 {
     $error = error_get_last();
     $additional_errors = [E_ERROR, E_PARSE];
     if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
-        faaaster_log_error($app_id, $instance_name, $wp_api_key, $error['type'], $error['message'], $error['file'], $error['line']);
+        faaaster_log_error($app_env['APP_ID'], $app_env['INSTANCE_NAME'], $app_env['WP_API_KEY'], $error['type'], $error['message'], $error['file'], $error['line']);
     }
 } // End faaaster_check_for_fatal()
 if ($app_id && $instance_name && $wp_api_key) {
-    register_shutdown_function('faaaster_check_for_fatal');
+    register_shutdown_function('faaaster_check_for_fatal', $app_env);
 }
