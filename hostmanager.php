@@ -10,10 +10,10 @@
  * License: GPLv2 or later
  */
 
-$app_id = getenv('APP_ID');
-$instance_name = getenv('INSTANCE_NAME');
-$wp_api_key = getenv('WP_API_KEY');
-$cfcache_enabled = getenv('CFCACHE_ENABLED');
+$app_id = defined('APP_ID') ? APP_ID : false;
+$instance_name = defined('INSTANCE_NAME') ? INSTANCE_NAME : false;
+$wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
+$cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : false;
 
 
 
