@@ -12,7 +12,6 @@
 if (!file_exists('/app/.include/manager.php')) {
     exit;
 }
-
 require_once('/app/.include/manager.php');
 
 $app_id = defined('APP_ID') ? APP_ID : false;
@@ -394,7 +393,8 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
     function cf_purge_all($app_id, $instance_name, $wp_api_key)
     {
         // error_log("Purge everything");
-        $url = "https://domains.themecloud.io/api/applications/" . $app_id . "/instances/" . $instance_name . "/cloudflare";
+        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
         $data = array(
             'scope' => 'everything',
         );
@@ -403,7 +403,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
             'body' => json_encode($data),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $wp_api_key, // Add the Authorization header with the API key
+                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
             ),
         );
         // Make the API call
@@ -424,11 +424,12 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
         }
     }
 
-    function cf_purge_urls($app_id, $instance_name, $wp_api_key, $urls)
+    function cf_purge_urls($urls)
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
-        $url = "https://domains.themecloud.io/api/applications/" . $app_id . "/instances/" . $instance_name . "/cloudflare";
+        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
         $data = array(
             'scope' => 'urls',
             'urls' => array($urls)
@@ -438,7 +439,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
             'body' => json_encode($data),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $wp_api_key, // Add the Authorization header with the API key
+                'Authorization' => 'Bearer ' . WP_API_KEY, // Add the Authorization header with the API key
             ),
         );
 
@@ -462,6 +463,149 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
 
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'cf_purge_urls', PHP_INT_MAX, 1);
+
+    # trigger event if component updated
+    function faaaster_updater_updated_action($upgrader_object, $options)
+    {
+        // Get the update action (core, plugin, or theme)
+        $action = $options['action'];
+
+        // Get the update type (update, install, or delete)
+        $type = $options['type'];
+
+        if ($action === "update") {
+
+            // Get the user information
+            $user = wp_get_current_user();
+
+            // Format the date and time
+            $date_time = current_time('mysql');
+
+            // initialize components
+            $components = "undefined";
+
+            // Check for different update types
+            if ($type === 'plugin') {
+                $components = $options['plugins'];
+            } elseif ($type === 'theme') {
+                $components = $options['theme'];
+            } elseif ($type === 'core') {
+                $components = "core";
+            } elseif ($type === 'translation') {
+                return;
+            }
+            $url = "https://domains.themecloud.io/api/webhook-event/";
+            $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+            $data = array(
+                'event' => "upgrader",
+                'data' => array(
+                    'action' => $action,
+                    'type' => $type,
+                    'components' => $components,
+                    'user' => $user->user_email,
+                    'date' => $date_time,
+                ),
+                'app_id' => APP_ID,
+                'instance' => INSTANCE_NAME,
+            );
+            // Define the request arguments
+            $args = array(
+                'body' => json_encode($data),
+                'headers' => array(
+                    'Content-Type' => 'application/json',
+                    'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
+                ),
+            );
+            // Make the API call
+            if (!wp_remote_post($url, $args)) {
+                error_log("Update event error: " . $response->get_error_message());
+            }
+        }
+    }
+    add_action('upgrader_process_complete', 'faaaster_updater_updated_action', 10, 2);
+
+    function faaaster_plugin_activate_action($plugin, $action)
+    {
+        // Get the user information
+        $user = wp_get_current_user();
+
+        // Format the date and time
+        $date_time = current_time('mysql');
+
+        $url = "https://domains.themecloud.io/api/webhook-event/";
+        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+        $data = array(
+            'event' => $action,
+            'data' => array(
+                'type' => "plugin",
+                'components' => $plugin,
+                'user' => $user->user_email,
+                'date' => $date_time,
+            ),
+            'app_id' => APP_ID,
+            'instance' => INSTANCE_NAME,
+        );
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
+            ),
+        );
+        // Make the API call
+        if (!wp_remote_post($url, $args)) {
+            error_log("Install event error: " . $response->get_error_message());
+        }
+    }
+    add_action('activated_plugin', function ($plugin) {
+        faaaster_plugin_activate_action($plugin, 'activate');
+    });
+    add_action('deactivated_plugin', function ($plugin) {
+        faaaster_plugin_activate_action($plugin, 'deactivate');
+    });
+
+    function faaaster_theme_deactivation_action($new_theme, $old_theme)
+    {
+        // $new_theme is the newly activated theme
+        // $old_theme is the deactivated theme
+
+        // Get the user information
+        $user = wp_get_current_user();
+
+        // Format the date and time
+        $date_time = current_time('mysql');
+
+        $url = "https://domains.themecloud.io/api/webhook-event/";
+        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+        $data = array(
+            'event' => "switch_theme",
+            'data' => array(
+                'type' => "theme",
+                'components' => array(
+                    'new' => $new_theme,
+                    'old' => $old_theme,
+                ),
+                'user' => $user->user_email,
+                'date' => $date_time,
+            ),
+            'app_id' => APP_ID,
+            'instance' => INSTANCE_NAME,
+        );
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
+            ),
+        );
+        // Make the API call
+        if (!wp_remote_post($url, $args)) {
+            error_log("Install event error: " . $response->get_error_message());
+        }
+    }
+    add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);
 }
 
 
@@ -476,26 +620,29 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
  * @return void
  */
 
-function faaaster_log_error($app_id, $instance_name, $wp_api_key, $num, $str, $file, $line, $context = null)
+function faaaster_log_error($num, $str, $file, $line, $context = null)
 {
     error_log("Got fatal error!");
-    $url = "https://domains.themecloud.io/api/webhook-alert/";
-    $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/webhook-fatalalert";
+    $url = "https://domains.themecloud.io/api/webhook-event";
+    $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
     $data = array(
-        'num' => $num,
-        'error' => $str,
-        'file' => $file,
-        'line' => $line,
-        'url' => $_SERVER['REQUEST_URI'],
-        'app_id' => $app_id,
-        'instance' => $instance_name,
+        'event' => 'fatal_error',
+        'data' => array(
+            'num' => $num,
+            'error' => $str,
+            'file' => $file,
+            'line' => $line,
+            'url' => $_SERVER['REQUEST_URI'],
+        ),
+        'app_id' => APP_ID,
+        'instance' => INSTANCE_NAME,
     );
     // Define the request arguments
     $args = array(
         'body' => json_encode($data),
         'headers' => array(
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' .  $wp_api_key, // Add the Authorization header with the API key
+            'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
         ),
     );
     // Make the API call
@@ -516,14 +663,14 @@ if ($app_id && $instance_name && $wp_api_key) {
  *
  * @return void
  */
-function faaaster_check_for_fatal($app_env)
+function faaaster_check_for_fatal()
 {
     $error = error_get_last();
     $additional_errors = [E_ERROR, E_PARSE];
     if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
-        faaaster_log_error($app_env['APP_ID'], $app_env['INSTANCE_NAME'], $app_env['WP_API_KEY'], $error['type'], $error['message'], $error['file'], $error['line']);
+        faaaster_log_error($error['type'], $error['message'], $error['file'], $error['line']);
     }
 } // End faaaster_check_for_fatal()
 if ($app_id && $instance_name && $wp_api_key) {
-    register_shutdown_function('faaaster_check_for_fatal', $app_env);
+    register_shutdown_function('faaaster_check_for_fatal');
 }
