@@ -390,7 +390,7 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 // Manage Cloudflare cache
 
 if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
-    function cf_purge_all($app_id, $instance_name, $wp_api_key)
+    function cf_purge_all()
     {
         // error_log("Purge everything");
         $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
