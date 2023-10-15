@@ -393,8 +393,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
     function cf_purge_all($app_id, $instance_name, $wp_api_key)
     {
         // error_log("Purge everything");
-        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
-        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
         $data = array(
             'scope' => 'everything',
         );
@@ -428,8 +427,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
-        $url = "https://domains.themecloud.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
-        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
         $data = array(
             'scope' => 'urls',
             'urls' => array($urls)
@@ -494,8 +492,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
             } elseif ($type === 'translation') {
                 return;
             }
-            $url = "https://domains.themecloud.io/api/webhook-event/";
-            $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+            $url = "https://app.faaaster.io/api/webhook-event/";
             $data = array(
                 'event' => "upgrader",
                 'data' => array(
@@ -532,8 +529,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
         // Format the date and time
         $date_time = current_time('mysql');
 
-        $url = "https://domains.themecloud.io/api/webhook-event/";
-        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+        $url = "https://app.faaaster.io/api/webhook-event/";
         $data = array(
             'event' => $action,
             'data' => array(
@@ -576,8 +572,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
         // Format the date and time
         $date_time = current_time('mysql');
 
-        $url = "https://domains.themecloud.io/api/webhook-event/";
-        $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+        $url = "https://app.faaaster.io/api/webhook-event/";
         $data = array(
             'event' => "switch_theme",
             'data' => array(
@@ -623,8 +618,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
 function faaaster_log_error($num, $str, $file, $line, $context = null)
 {
     error_log("Got fatal error!");
-    $url = "https://domains.themecloud.io/api/webhook-event";
-    $url = "https://0729-2a01-cb1d-8507-1800-c4be-5c3-c32b-36db.ngrok-free.app/api/webhook-event";
+    $url = "https://app.faaaster.io/api/webhook-event";
     $data = array(
         'event' => 'fatal_error',
         'data' => array(
