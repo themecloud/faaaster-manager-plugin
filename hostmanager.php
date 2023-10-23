@@ -15,10 +15,10 @@ if (!file_exists('/app/.include/manager.php')) {
 require_once('/app/.include/manager.php');
 
 $app_id = defined('APP_ID') ? APP_ID : false;
-$instance_name = defined('INSTANCE_NAME') ? INSTANCE_NAME : false;
+$branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : false;
-$app_env = ['APP_ID' => $app_id, 'INSTANCE_NAME' => $instance_name, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
+$app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     require_once ABSPATH . 'wp-load.php';
@@ -389,11 +389,11 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 // Manage Cloudflare cache
 
-if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
+if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     function cf_purge_all()
     {
         // error_log("Purge everything");
-        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
         $data = array(
             'scope' => 'everything',
         );
@@ -427,7 +427,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
-        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . INSTANCE_NAME . "/cloudflare";
+        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
         $data = array(
             'scope' => 'urls',
             'urls' => array($urls)
@@ -503,7 +503,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
                     'date' => $date_time,
                 ),
                 'app_id' => APP_ID,
-                'instance' => INSTANCE_NAME,
+                'instance' => BRANCH,
             );
             // Define the request arguments
             $args = array(
@@ -539,7 +539,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
                 'date' => $date_time,
             ),
             'app_id' => APP_ID,
-            'instance' => INSTANCE_NAME,
+            'instance' => BRANCH,
         );
         // Define the request arguments
         $args = array(
@@ -585,7 +585,7 @@ if ($app_id && $wp_api_key && $instance_name && $cfcache_enabled) {
                 'date' => $date_time,
             ),
             'app_id' => APP_ID,
-            'instance' => INSTANCE_NAME,
+            'instance' => BRANCH,
         );
         // Define the request arguments
         $args = array(
@@ -629,7 +629,7 @@ function faaaster_log_error($num, $str, $file, $line, $context = null)
             'url' => $_SERVER['REQUEST_URI'],
         ),
         'app_id' => APP_ID,
-        'instance' => INSTANCE_NAME,
+        'instance' => BRANCH,
     );
     // Define the request arguments
     $args = array(
@@ -647,7 +647,7 @@ function faaaster_log_error($num, $str, $file, $line, $context = null)
     // Restore the old handler
     restore_error_handler();
 } // End faaaster_log_error()
-if ($app_id && $instance_name && $wp_api_key) {
+if ($app_id && $branch && $wp_api_key) {
     set_error_handler('faaaster_log_error');
 }
 
@@ -665,6 +665,6 @@ function faaaster_check_for_fatal()
         faaaster_log_error($error['type'], $error['message'], $error['file'], $error['line']);
     }
 } // End faaaster_check_for_fatal()
-if ($app_id && $instance_name && $wp_api_key) {
+if ($app_id && $branch && $wp_api_key) {
     register_shutdown_function('faaaster_check_for_fatal');
 }
