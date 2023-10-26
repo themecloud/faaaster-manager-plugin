@@ -364,7 +364,7 @@ function faaaster_no_wordpress_errors()
 {
     return 'Something is wrong!';
 }
-if (HIDE_SSO_LINK != false) {
+if (HIDE_WP_ERRORS != false) {
     add_filter('login_errors', 'faaaster_no_wordpress_errors');
 }
 
