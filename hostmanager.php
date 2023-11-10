@@ -474,7 +474,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         if ($action === "update") {
 
             // Get the user information
-            $user = wp_get_current_user();
+            $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
 
             // Format the date and time
             $date_time = current_time('mysql');
@@ -485,6 +485,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
             // Check for different update types
             if ($type === 'plugin') {
                 $components = $options['plugins'];
+                $components = get_plugin_data(WP_PLUGIN_DIR . "/" . $components[0]);
             } elseif ($type === 'theme') {
                 $components = $options['theme'];
             } elseif ($type === 'core') {
@@ -524,7 +525,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     function faaaster_plugin_activate_action($plugin, $action)
     {
         // Get the user information
-        $user = wp_get_current_user();
+        $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
 
         // Format the date and time
         $date_time = current_time('mysql');
@@ -567,7 +568,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         // $old_theme is the deactivated theme
 
         // Get the user information
-        $user = wp_get_current_user();
+        $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
 
         // Format the date and time
         $date_time = current_time('mysql');
@@ -617,7 +618,6 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
 
 function faaaster_log_error($num, $str, $file, $line, $context = null)
 {
-    error_log("Got fatal error!");
     $url = "https://app.faaaster.io/api/webhook-event";
     $data = array(
         'event' => 'fatal_error',

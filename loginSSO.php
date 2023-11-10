@@ -101,7 +101,7 @@ class LoginSSO
 
 
         $user_data = get_user_by('login', $username);
-        if ($_GET['user']) {
+        if (isset($_GET['user'])) {
             $user_data = get_userdata($_GET["user"]);
         }
 
