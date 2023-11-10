@@ -616,40 +616,40 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
  * @return void
  */
 
-function faaaster_log_error($num, $str, $file, $line, $context = null)
-{
-    $url = "https://app.faaaster.io/api/webhook-event";
-    $data = array(
-        'event' => 'fatal_error',
-        'data' => array(
-            'num' => $num,
-            'error' => $str,
-            'file' => $file,
-            'line' => $line,
-            'url' => $_SERVER['REQUEST_URI'],
-        ),
-        'app_id' => APP_ID,
-        'instance' => BRANCH,
-    );
-    // Define the request arguments
-    $args = array(
-        'body' => json_encode($data),
-        'headers' => array(
-            'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
-        ),
-    );
-    // Make the API call
-    if (!wp_remote_post($url, $args)) {
-        error_log("Fatal alert error: " . $response->get_error_message());
-    }
+// function faaaster_log_error($num, $str, $file, $line, $context = null)
+// {
+//     $url = "https://app.faaaster.io/api/webhook-event";
+//     $data = array(
+//         'event' => 'fatal_error',
+//         'data' => array(
+//             'num' => $num,
+//             'error' => $str,
+//             'file' => $file,
+//             'line' => $line,
+//             'url' => $_SERVER['REQUEST_URI'],
+//         ),
+//         'app_id' => APP_ID,
+//         'instance' => BRANCH,
+//     );
+//     // Define the request arguments
+//     $args = array(
+//         'body' => json_encode($data),
+//         'headers' => array(
+//             'Content-Type' => 'application/json',
+//             'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
+//         ),
+//     );
+//     // Make the API call
+//     if (!wp_remote_post($url, $args)) {
+//         error_log("Fatal alert error: " . $response->get_error_message());
+//     }
 
-    // Restore the old handler
-    restore_error_handler();
-} // End faaaster_log_error()
-if ($app_id && $branch && $wp_api_key) {
-    set_error_handler('faaaster_log_error');
-}
+//     // Restore the old handler
+//     restore_error_handler();
+// } // End faaaster_log_error()
+// if ($app_id && $branch && $wp_api_key) {
+//     set_error_handler('faaaster_log_error');
+// }
 
 
 /**
@@ -657,14 +657,14 @@ if ($app_id && $branch && $wp_api_key) {
  *
  * @return void
  */
-function faaaster_check_for_fatal()
-{
-    $error = error_get_last();
-    $additional_errors = [E_ERROR, E_PARSE];
-    if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
-        faaaster_log_error($error['type'], $error['message'], $error['file'], $error['line']);
-    }
-} // End faaaster_check_for_fatal()
-if ($app_id && $branch && $wp_api_key) {
-    register_shutdown_function('faaaster_check_for_fatal');
-}
+// function faaaster_check_for_fatal()
+// {
+//     $error = error_get_last();
+//     $additional_errors = [E_ERROR, E_PARSE];
+//     if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
+//         faaaster_log_error($error['type'], $error['message'], $error['file'], $error['line']);
+//     }
+// } // End faaaster_check_for_fatal()
+// if ($app_id && $branch && $wp_api_key) {
+//     register_shutdown_function('faaaster_check_for_fatal');
+// }
