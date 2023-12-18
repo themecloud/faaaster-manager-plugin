@@ -26,7 +26,9 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     function skipplugins_plugins_filter($plugins)
     {
         foreach ($plugins as $i => $plugin) {
-            unset($plugins[$i]);
+            if ($plugin != "simply-static/simply-static.php" && $plugin != "advanced-custom-fields/acf.php" && $plugin != "advanced-custom-fields-pro/acf.php") {
+                unset($plugins[$i]);
+            }
         }
         return $plugins;
     }
@@ -255,6 +257,92 @@ function clear_cache($request)
     return new WP_REST_Response($data, 200);
 }
 
+// Function to disable or enable emails
+function handle_email_control($request)
+{
+    $enable = $request->get_param('enable');
+
+    if ($enable === 'yes') {
+        update_option('disable_emails', 'no');
+        return new WP_REST_Response('Emails enabled', 200);
+    } else {
+        update_option('disable_emails', 'yes');
+        return new WP_REST_Response('Emails disabled', 200);
+    }
+}
+
+// Function to set Astra Key
+function handle_astra_key($request)
+{
+    update_option('astra_key', $request->get_param('key'));
+    return new WP_REST_Response('Astra Key', 200);
+}
+
+// Function to enable static
+function faaaster_enable_static()
+{
+    $plugin_slug = 'simply-static';
+    $plugin_path = 'simply-static/simply-static.php';
+
+    // Check if the plugin is installed
+    if (!file_exists(WP_CONTENT_DIR . "/plugins/" . $plugin_path)) {
+        // Install the plugin
+        include_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
+        include_once ABSPATH . 'wp-admin/includes/plugin-install.php';
+
+        $api = plugins_api('plugin_information', array('slug' => $plugin_slug));
+        if (is_wp_error($api)) {
+            return new WP_Error('plugin_error', 'Plugin information retrieval failed.');
+        }
+
+        $upgrader = new Plugin_Upgrader();
+        $installed = $upgrader->install($api->download_link);
+
+        if (is_wp_error($installed)) {
+            return new WP_Error('install_failed', 'Plugin installation failed.');
+        }
+        // Attempt to activate the plugin
+        activate_plugin($plugin_path);
+
+
+        return rest_ensure_response(array('success' => true, 'message' => 'Plugin installed and activated.'));
+    } else {
+        if (!is_plugin_active($plugin_path)) {
+            // Activate the plugin
+            activate_plugin($plugin_path);
+
+            return rest_ensure_response(array('success' => true, 'message' => 'Plugin activated.'));
+        }
+        // Plugin is already installed and active
+        return rest_ensure_response(array('success' => true, 'message' => 'Plugin already installed and active.'));
+    }
+}
+
+// Function to build a static export
+function faaaster_run_static_export()
+{ {
+        if (!class_exists('Simply_Static\Plugin')) {
+            // If the class does not exist, return early
+            return new WP_REST_Response('Static not enabled', 400);
+        }
+
+        // Full static export
+        $simply_static = Simply_Static\Plugin::instance();
+        $simply_static->run_static_export();
+        return new WP_REST_Response('Static export launched', 200);
+    }
+}
+
+// Function to intercept emails based on the option
+function intercept_emails($args)
+{
+    if (get_option('disable_emails') === 'yes') {
+        return []; // Returning an empty array to cancel email sending
+    }
+    return $args;
+}
+add_filter('wp_mail', 'intercept_emails');
+
 function get_db_prefix()
 {
     require_once ABSPATH . "wp-blog-header.php";
@@ -335,6 +423,34 @@ function at_rest_init()
     register_rest_route($namespace, '/clear_cache', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'clear_cache',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/toggle_email', array(
+        'methods' => WP_REST_Server::CREATABLE,
+        'callback' => 'handle_email_control',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/astra_key', array(
+        'methods' => WP_REST_Server::CREATABLE,
+        'callback' => 'handle_astra_key',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/static_enable', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_enable_static',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/static_push', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_run_static_export',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
@@ -462,6 +578,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'cf_purge_urls', PHP_INT_MAX, 1);
 
+
     # trigger event if component updated
     function faaaster_updater_updated_action($upgrader_object, $options)
     {
@@ -480,17 +597,47 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
             $date_time = current_time('mysql');
 
             // initialize components
-            $components = "undefined";
+            $components = [];
 
             // Check for different update types
             if ($type === 'plugin') {
-                $components = $options['plugins'];
-                $components = get_plugin_data(WP_PLUGIN_DIR . "/" . $components[0]);
+                if (isset($options['bulk']) && $options['bulk'] == "true") {
+                    foreach ($options['plugins'] as $each_plugin) {
+                        $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $each_plugin);
+                        $old_version = $upgrader_object->skin->plugin_info['Version'];
+                        $name = $plugin["Name"];
+                        $new_version = $plugin["Version"];
+                        $plugin = $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"];
+                        $components[] = $plugin;
+                    }
+                } else {
+                    $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $options['plugin']);
+                    $old_version = $upgrader_object->skin->plugin_info['Version'];
+                    $name = $plugin["Name"];
+                    $new_version = $plugin["Version"];
+                    $plugin = $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"];
+                    $components[] = $plugin;
+                }
             } elseif ($type === 'theme') {
-                $components = $options['theme'];
-            } elseif ($type === 'core') {
-                $components = "core";
-            } elseif ($type === 'translation') {
+                if (isset($options['bulk']) && $options['bulk'] == "true") {
+
+                    foreach ($options['themes'] as $each_theme) {
+                        $theme = wp_get_theme($each_theme);
+                        $old_version = get_transient('theme_' . $each_theme . '_old_version');
+                        $name = $theme["Name"];
+                        $new_version = $theme["Version"];
+                        $theme = $old_version ? $theme["Name"] . " - " . $old_version . " >> " . $theme["Version"] :  $theme["Name"] . " - " . $theme["Version"];
+                        $components[] = $theme;
+                    }
+                } else {
+                    $theme =  wp_get_theme($options['theme']);
+                    $old_version = get_transient('theme_' . $options['theme'] . '_old_version');
+                    $name = $theme["Name"];
+                    $new_version = $theme["Version"];
+                    $theme = $old_version ? $theme["Name"] . " - " . $old_version . " >> " . $theme["Version"] :  $theme["Name"] . " - " . $theme["Version"];
+                    $components[] = $theme;
+                }
+            } elseif ($type === 'core' || $type === 'translation') {
                 return;
             }
             $url = "https://app.faaaster.io/api/webhook-event/";
@@ -500,6 +647,9 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
                     'action' => $action,
                     'type' => $type,
                     'components' => $components,
+                    'name' => $name,
+                    'old_version' => $old_version,
+                    'new_version' => $new_version,
                     'user' => $user->user_email,
                     'date' => $date_time,
                 ),
@@ -522,6 +672,79 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     }
     add_action('upgrader_process_complete', 'faaaster_updater_updated_action', 10, 2);
 
+    // Manage core updates
+    function on_wp_core_update($wp_version)
+    {
+        // Retrieve the old version
+        $old_version = get_option('wp_pre_update_version');
+
+        // Get the new version
+        $new_version = $wp_version;
+
+        $components[] = "WordPress" . " - " . $old_version . " >> " . $new_version;
+        $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
+        $date_time = current_time('mysql');
+        $url = "https://app.faaaster.io/api/webhook-event/";
+        $data = array(
+            'event' => "upgrader",
+            'data' => array(
+                'action' => "update",
+                'type' => "core",
+                'old_version' => $old_version,
+                'new_version' => $new_version,
+                'components' => $components,
+                'user' => $user->user_email,
+                'date' => $date_time,
+            ),
+            'app_id' => APP_ID,
+            'instance' => BRANCH,
+        );
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
+            ),
+        );
+        // Make the API call
+        if (!wp_remote_post($url, $args)) {
+            error_log("Update event error: " . $response->get_error_message());
+        }
+
+        // Clean up the transient
+        delete_transient('wp_old_version');
+    }
+    add_action('_core_updated_successfully', 'on_wp_core_update');
+
+    // Capture old theme version
+    function faaaster_capture_old_theme_version($true, $hook_extra)
+    {
+        if (isset($hook_extra['theme'])) {
+            $theme_slug = $hook_extra['theme'];
+            $theme = wp_get_theme($theme_slug);
+
+            $old_version = $theme->get('Version');
+
+            // Store the old version in a transient
+            set_transient('theme_' . $theme_slug . '_old_version', $old_version, 60 * 10); // 10 minutes
+        }
+        return $true;
+    }
+    add_action('upgrader_pre_install', 'faaaster_capture_old_theme_version', 10, 2);
+
+    // Capture old core version
+    function capture_wp_current_version()
+    {
+        if (!get_option('wp_pre_update_version')) {
+            update_option('wp_pre_update_version', get_bloginfo('version'));
+        } elseif (get_option('wp_pre_update_version') != get_bloginfo('version')) {
+            update_option('wp_pre_update_version', get_bloginfo('version'));
+        }
+    }
+    add_action('admin_init', 'capture_wp_current_version');
+
+    // Activation hook
     function faaaster_plugin_activate_action($plugin, $action)
     {
         // Get the user information
@@ -529,13 +752,17 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
 
         // Format the date and time
         $date_time = current_time('mysql');
+        $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $plugin);
+        $components = $plugin["Name"] . " - " . $plugin["Version"];
 
         $url = "https://app.faaaster.io/api/webhook-event/";
         $data = array(
             'event' => $action,
             'data' => array(
                 'type' => "plugin",
-                'components' => $plugin,
+                'components' => $components,
+                'name' => $plugin["Name"],
+                'version' => $plugin["Version"],
                 'user' => $user->user_email,
                 'date' => $date_time,
             ),
@@ -603,68 +830,3 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);
 }
-
-
-/**
- * Trigger webhook when error occurs
- *
- * @param int $num
- * @param string $str
- * @param string $file
- * @param string $line
- * @param null $context
- * @return void
- */
-
-// function faaaster_log_error($num, $str, $file, $line, $context = null)
-// {
-//     $url = "https://app.faaaster.io/api/webhook-event";
-//     $data = array(
-//         'event' => 'fatal_error',
-//         'data' => array(
-//             'num' => $num,
-//             'error' => $str,
-//             'file' => $file,
-//             'line' => $line,
-//             'url' => $_SERVER['REQUEST_URI'],
-//         ),
-//         'app_id' => APP_ID,
-//         'instance' => BRANCH,
-//     );
-//     // Define the request arguments
-//     $args = array(
-//         'body' => json_encode($data),
-//         'headers' => array(
-//             'Content-Type' => 'application/json',
-//             'Authorization' => 'Bearer ' .  WP_API_KEY, // Add the Authorization header with the API key
-//         ),
-//     );
-//     // Make the API call
-//     if (!wp_remote_post($url, $args)) {
-//         error_log("Fatal alert error: " . $response->get_error_message());
-//     }
-
-//     // Restore the old handler
-//     restore_error_handler();
-// } // End faaaster_log_error()
-// if ($app_id && $branch && $wp_api_key) {
-//     set_error_handler('faaaster_log_error');
-// }
-
-
-/**
- * Checks for fatal errors and parse errors, work around for set_error_handler not working on them.
- *
- * @return void
- */
-// function faaaster_check_for_fatal()
-// {
-//     $error = error_get_last();
-//     $additional_errors = [E_ERROR, E_PARSE];
-//     if (isset($error['type']) && in_array($error['type'], $additional_errors)) {
-//         faaaster_log_error($error['type'], $error['message'], $error['file'], $error['line']);
-//     }
-// } // End faaaster_check_for_fatal()
-// if ($app_id && $branch && $wp_api_key) {
-//     register_shutdown_function('faaaster_check_for_fatal');
-// }
