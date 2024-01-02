@@ -105,12 +105,10 @@ class LoginSSO
         $user_data = get_user_by('login', $username);
         if (isset($_GET['user'])) {
             $user_data = get_userdata($_GET["user"]);
-        }else{
-            $get_user = false;
         }
 
         // no user found
-        if ($user_data === false || !$get_user) {
+        if ($user_data === false || !isset($_GET['user'])) {
             $admin_users = get_users(array('role' => 'administrator'));
             if (count($admin_users)) {
                 if (count($admin_users) > 1) {
