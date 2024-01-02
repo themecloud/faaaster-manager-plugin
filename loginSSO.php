@@ -95,18 +95,22 @@ class LoginSSO
 
     private function getUser($username)
     {
-        session_start();
+        if (!isset($_SESSION)) {
+            session_start();
+        }
 
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
 
         $user_data = get_user_by('login', $username);
-        if ($_GET['user']) {
+        if (isset($_GET['user'])) {
             $user_data = get_userdata($_GET["user"]);
+        }else{
+            $get_user = false;
         }
 
         // no user found
-        if ($user_data === false || !$_GET['user']) {
+        if ($user_data === false || !$get_user) {
             $admin_users = get_users(array('role' => 'administrator'));
             if (count($admin_users)) {
                 if (count($admin_users) > 1) {
@@ -154,8 +158,11 @@ class LoginSSO
         wp_set_current_user($user_data->ID, $user_data->user_login);
         wp_set_auth_cookie($user_data->ID);
         do_action('wp_login', $user_data->user_login, $user_data);
-
-        $parsed = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY);
+        if(isset($_SERVER['HTTP_REFERER'])){
+            $parsed = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY);
+        }else{
+            $parsed = false;
+        }
 
         // redirect home or where the user were
         if (!$parsed) {
