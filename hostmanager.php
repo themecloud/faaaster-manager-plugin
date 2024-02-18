@@ -49,6 +49,7 @@ function faaaster_disable_filters_for_manager_plugin($response)
 add_action('rest_api_init', 'faaaster_disable_filters_for_manager_plugin');
 
 require_once('plugin.php');
+require_once('core.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
 require_once('loginSSO.php');
@@ -153,7 +154,7 @@ function faaaster_manager_clear_all_cache()
 
     // New Method fcgi
     $_url_purge      = "http://localhost/purge-all";
-    manager_do_remote_get($_url_purge);
+    faaaster_manager_do_remote_get($_url_purge);
 
     // Pagespeed
     touch('/tmp/pagespeed/cache.flush');
@@ -201,6 +202,7 @@ function faaaster_toggle_mu_plugin($request)
     return new WP_REST_Response($data, 200);
 }
 
+// Get site info
 function faaaster_get_site_state()
 {
     global $siteState;
@@ -212,24 +214,28 @@ function faaaster_get_site_state()
     return new WP_REST_Response($data, 200);
 }
 
+// Update plugin
 function faaaster_plugin_upgrade($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->plugin_upgrade($request);
 }
 
+// Install plugin
 function faaaster_plugin_install($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restInstall($request);
 }
 
+// Activate / deactivate plugin
 function faaaster_plugin_toggle($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restToggle($request);
 }
 
+// List plugins
 function faaaster_plugin_list($request)
 {
     if (!function_exists('get_plugins')) {
@@ -246,6 +252,7 @@ function faaaster_plugin_list($request)
     return new WP_REST_Response($data, 200);
 }
 
+// Check integruty of core and plugins
 function faaaster_integrity_check($request)
 {
     exec('wp core verify-checksums --skip-plugins --skip-themes', $output, $return_var);
@@ -271,12 +278,15 @@ function faaaster_integrity_check($request)
     return new WP_REST_Response($data, 200);
 }
 
+// Update core
 function faaaster_update_core($request)
 {
+    $params = $request->get_query_params();
     $coreUpgrader = new CoreUpgrade();
-    return $coreUpgrader->core_upgrade($request);
+    return $coreUpgrader->core_update($params);
 }
 
+// Reinstall core from wp.org
 function faaaster_reinstall_core($request)
 {
     exec('wp core download --skip-content --force --skip-plugins --skip-themes', $output, $return_var);
@@ -298,6 +308,7 @@ function faaaster_reinstall_core($request)
     }
 }
 
+// Reinstall plugins from wp.org
 function faaaster_reinstall_plugins($request)
 {
     exec('wp plugin --force --skip-plugins --skip-themes install $(wp plugin list --force --skip-plugins --skip-themes --field=name | grep -v "nginx-helper") --force', $output, $return_var);
@@ -319,10 +330,10 @@ function faaaster_reinstall_plugins($request)
     }
 }
 
-
+// Clear Cache
 function faaaster_clear_cache($request)
 {
-    $clear_cache = manager_clear_all_cache();
+    $clear_cache = faaaster_manager_clear_all_cache();
 
     $data = array(
         "code" => "ok",
@@ -331,7 +342,7 @@ function faaaster_clear_cache($request)
     return new WP_REST_Response($data, 200);
 }
 
-// Function to disable or enable emails
+// Disable or enable emails
 function faaaster_handle_email_control($request)
 {
     $enable = $request->get_param('enable');
@@ -345,14 +356,14 @@ function faaaster_handle_email_control($request)
     }
 }
 
-// Function to set Astra Key
+// Set Astra Key
 function faaaster_handle_astra_key($request)
 {
     update_option('astra_key', $request->get_param('key'));
     return new WP_REST_Response('Astra Key', 200);
 }
 
-// Function to enable static
+// Enable static
 function faaaster_enable_static()
 {
     $plugin_slug = 'simply-static';
@@ -392,7 +403,7 @@ function faaaster_enable_static()
     }
 }
 
-// Function to build a static export
+// Build a static export
 function faaaster_run_static_export()
 { {
         if (!class_exists('Simply_Static\Plugin')) {
@@ -407,20 +418,22 @@ function faaaster_run_static_export()
     }
 }
 
-// Function to intercept emails based on the option
+// Intercept emails 
 function faaaster_intercept_emails($args)
 {
-    if (get_option('disable_emails') === 'yes') {
+    $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : false;
+    if (get_option('disable_emails') === 'yes' && $private === "true") {
         return []; // Returning an empty array to cancel email sending
     }
     return $args;
 }
-add_filter('wp_mail', 'intercept_emails');
+add_filter('wp_mail', 'faaaster_intercept_emails');
 
+
+// Get DB prefix
 function faaaster_get_db_prefix()
 {
-    require_once ABSPATH . "wp-blog-header.php";
-
+    global $wpdb;
     $data = array(
         "code" => "ok",
         "data" => $wpdb->base_prefix
@@ -429,6 +442,7 @@ function faaaster_get_db_prefix()
     return new WP_REST_Response($data, 200);
 }
 
+// Login
 function faaaster_login()
 {
     include('request/index.php');
@@ -494,7 +508,7 @@ function faaaster_at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
-    register_rest_route($namespace, '/update-core', array(
+    register_rest_route($namespace, '/update_core', array(
         'methods' => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_update_core',
         'args' => array(),
@@ -606,7 +620,6 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 
 // Manage Cloudflare cache
-
 if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     function faaaster_cf_purge_all()
     {
@@ -768,7 +781,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
             );
             // Make the API call
             if (!wp_remote_post($url, $args)) {
-                error_log("Update event error: " . $response->get_error_message());
+                error_log("Update event error");
             }
         }
     }
@@ -811,7 +824,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Update event error: " . $response->get_error_message());
+            error_log("Update event error");
         }
 
         // Clean up the transient
@@ -881,7 +894,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Install event error: " . $response->get_error_message());
+            error_log("Install event error");
         }
     }
     add_action('activated_plugin', function ($plugin) {
@@ -927,7 +940,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Install event error: " . $response->get_error_message());
+            error_log("Install event error");
         }
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);

@@ -7,7 +7,10 @@ class CoreUpgrade
             'locale'  => get_locale(),
             'version' => get_bloginfo('version')
         ]);
-
+       
+        //$args['locale']="fr_FR";
+        // error_log("version ".$args['version']);
+        // error_log("locale ".$args['locale']);
         if (!function_exists('find_core_update')) {
             require_once ABSPATH . 'wp-admin/includes/update.php';
         }
@@ -20,7 +23,7 @@ class CoreUpgrade
             require_once ABSPATH . 'wp-admin/includes/misc.php';
         }
 
-        $update = find_core_update($args['version'], $args['locale']);
+        $update = find_core_update($args['version'], $args['locale']);        
         if (!$update) {
             return [
                 'message' => esc_html('Update not found!'),
