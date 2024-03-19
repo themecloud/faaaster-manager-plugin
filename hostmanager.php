@@ -36,7 +36,7 @@ if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     }
 }
 
-function disable_filters_for_manager_plugin($response)
+function faaaster_disable_filters_for_manager_plugin($response)
 {
     $request_url = $_SERVER['REQUEST_URI'];
     // Check if the URL contains "manager-plugin"
@@ -48,9 +48,10 @@ function disable_filters_for_manager_plugin($response)
 
     return $response;
 }
-add_action('rest_api_init', 'disable_filters_for_manager_plugin');
+add_action('rest_api_init', 'faaaster_disable_filters_for_manager_plugin');
 
 require_once('plugin.php');
+require_once('core.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
 require_once('loginSSO.php');
@@ -58,10 +59,10 @@ require_once('loginSSO.php');
 $siteState = new SiteState();
 $muManager = new MUPluginManager();
 
-// add_action('admin_enqueue_scripts', 'hostmanager_assets');
-// add_action('admin_menu', 'manager_setup_menu');
+// add_action('admin_enqueue_scripts', 'faaaster_hostmanager_assets');
+// add_action('admin_menu', 'faaaster_manager_setup_menu');
 
-function hostmanager_assets($hook)
+function faaaster_hostmanager_assets($hook)
 {
 
     // copy files into wp_content_dir because mu-plugins isn't accessible
@@ -91,13 +92,13 @@ function hostmanager_assets($hook)
     wp_localize_script('hostmanager', 'hostmanager', ['url' => get_site_url(), 'nonce' => wp_create_nonce('wp_rest'), 'tc_token' => $_COOKIE['tc_token']]);
 }
 
-function manager_setup_menu()
+function faaaster_manager_setup_menu()
 {
 
-    add_submenu_page(null, 'HostManger Plugin', 'HostManger Plugin', 'manage_options', 'hostmanager', 'manager_init');
+    add_submenu_page(null, 'HostManger Plugin', 'HostManger Plugin', 'manage_options', 'hostmanager', 'faaaster_manager_init');
 }
 
-function manager_init()
+function faaaster_manager_init()
 {
 
     global $muManager;
@@ -112,7 +113,7 @@ function manager_init()
     echo $html;
 }
 
-function get_check()
+function faaaster_get_check()
 {
     $data = array(
         "code" => "ok",
@@ -121,7 +122,7 @@ function get_check()
     return new WP_REST_Response($data, 200);
 }
 
-function manager_do_remote_get(string $url, array $args = array())
+function faaaster_manager_do_remote_get(string $url, array $args = array())
 {
     $headers = $args['headers'];
     $headers = array(
@@ -148,14 +149,14 @@ function manager_do_remote_get(string $url, array $args = array())
     curl_close($ch);
 }
 
-function manager_clear_all_cache()
+function faaaster_manager_clear_all_cache()
 {
     // OP Cache
     opcache_reset();
 
     // New Method fcgi
     $_url_purge      = "http://localhost/purge-all";
-    manager_do_remote_get($_url_purge);
+    faaaster_manager_do_remote_get($_url_purge);
 
     // Pagespeed
     touch('/tmp/pagespeed/cache.flush');
@@ -164,7 +165,7 @@ function manager_clear_all_cache()
     wp_cache_flush();
 }
 
-function toggle_mu_plugin($request)
+function faaaster_toggle_mu_plugin($request)
 {
     global $muManager;
 
@@ -203,7 +204,8 @@ function toggle_mu_plugin($request)
     return new WP_REST_Response($data, 200);
 }
 
-function get_site_state()
+// Get site info
+function faaaster_get_site_state()
 {
     global $siteState;
     $data = array(
@@ -214,25 +216,29 @@ function get_site_state()
     return new WP_REST_Response($data, 200);
 }
 
-function plugin_upgrade($request)
+// Update plugin
+function faaaster_plugin_upgrade($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->plugin_upgrade($request);
 }
 
-function plugin_install($request)
+// Install plugin
+function faaaster_plugin_install($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restInstall($request);
 }
 
-function plugin_toggle($request)
+// Activate / deactivate plugin
+function faaaster_plugin_toggle($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restToggle($request);
 }
 
-function plugin_list($request)
+// List plugins
+function faaaster_plugin_list($request)
 {
     if (!function_exists('get_plugins')) {
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
@@ -248,9 +254,88 @@ function plugin_list($request)
     return new WP_REST_Response($data, 200);
 }
 
-function clear_cache($request)
+// Check integruty of core and plugins
+function faaaster_integrity_check($request)
 {
-    $clear_cache = manager_clear_all_cache();
+    exec('wp core verify-checksums --skip-plugins --skip-themes', $output, $return_var);
+    if ($return_var !== 0) {
+        // Handle error
+        echo "Error executing command: " . implode("\n", $output);
+        $core_integrity = false;
+    } else {
+        // Command executed successfully
+        echo "Command executed successfully: " . implode("\n", $output);
+        $core_integrity = true;
+    }
+    $plugins_integrity = shell_exec('wp plugin verify-checksums --skip-plugins --skip-themes --all --format=json');
+
+    $data = array(
+        "code" => "ok",
+        "data" =>   array(
+            "core" => $core_integrity,
+            "plugins" => json_decode($plugins_integrity)
+        )
+    );
+
+    return new WP_REST_Response($data, 200);
+}
+
+// Update core
+function faaaster_update_core($request)
+{
+    $params = $request->get_query_params();
+    $coreUpgrader = new CoreUpgrade();
+    return $coreUpgrader->core_update($params);
+}
+
+// Reinstall core from wp.org
+function faaaster_reinstall_core($request)
+{
+    exec('wp core download --skip-content --force --skip-plugins --skip-themes', $output, $return_var);
+    if ($return_var !== 0) {
+        // Handle error
+        echo "Error executing command: " . implode("\n", $output);
+        $data = array(
+            "code" => "ko",
+            "error" => json_encode($output),
+        );
+        return new WP_REST_Response($data, 200);
+    } else {
+        // Command executed successfully
+        echo "Command executed successfully: " . implode("\n", $output);
+        $data = array(
+            "code" => "ok",
+        );
+        return new WP_REST_Response($data, 200);
+    }
+}
+
+// Reinstall plugins from wp.org
+function faaaster_reinstall_plugins($request)
+{
+    exec('wp plugin --force --skip-plugins --skip-themes install $(wp plugin list --force --skip-plugins --skip-themes --field=name | grep -v "nginx-helper") --force', $output, $return_var);
+    if ($return_var !== 0) {
+        // Handle error
+        echo "Error executing command: " . implode("\n", $output);
+        $data = array(
+            "code" => "ko",
+            "error" => json_encode($output),
+        );
+        return new WP_REST_Response($data, 200);
+    } else {
+        // Command executed successfully
+        echo "Command executed successfully: " . implode("\n", $output);
+        $data = array(
+            "code" => "ok",
+        );
+        return new WP_REST_Response($data, 200);
+    }
+}
+
+// Clear Cache
+function faaaster_clear_cache($request)
+{
+    $clear_cache = faaaster_manager_clear_all_cache();
 
     $data = array(
         "code" => "ok",
@@ -259,8 +344,8 @@ function clear_cache($request)
     return new WP_REST_Response($data, 200);
 }
 
-// Function to disable or enable emails
-function handle_email_control($request)
+// Disable or enable emails
+function faaaster_handle_email_control($request)
 {
     $enable = $request->get_param('enable');
 
@@ -273,14 +358,14 @@ function handle_email_control($request)
     }
 }
 
-// Function to set Astra Key
-function handle_astra_key($request)
+// Set Astra Key
+function faaaster_handle_astra_key($request)
 {
     update_option('astra_key', $request->get_param('key'));
     return new WP_REST_Response('Astra Key', 200);
 }
 
-// Function to enable static
+// Enable static
 function faaaster_enable_static()
 {
     $plugin_slug = 'simply-static';
@@ -320,7 +405,7 @@ function faaaster_enable_static()
     }
 }
 
-// Function to build a static export
+// Build a static export
 function faaaster_run_static_export()
 { {
         if (!class_exists('Simply_Static\Plugin')) {
@@ -335,20 +420,21 @@ function faaaster_run_static_export()
     }
 }
 
-// Function to intercept emails based on the option
-function intercept_emails($args)
+// Intercept emails 
+function faaaster_intercept_emails($args)
 {
     if (get_option('disable_emails') === 'yes' && $private == true) {
         return []; // Returning an empty array to cancel email sending
     }
     return $args;
 }
-add_filter('wp_mail', 'intercept_emails');
+add_filter('wp_mail', 'faaaster_intercept_emails');
 
-function get_db_prefix()
+
+// Get DB prefix
+function faaaster_get_db_prefix()
 {
-    require_once ABSPATH . "wp-blog-header.php";
-
+    global $wpdb;
     $data = array(
         "code" => "ok",
         "data" => $wpdb->base_prefix
@@ -399,7 +485,8 @@ function update_patterns_list(WP_REST_Request $request)
     return new WP_REST_Response($patterns, 200);
 }
 
-function login()
+function faaaster_login()
+
 {
     include('request/index.php');
 }
@@ -407,7 +494,7 @@ function login()
 /**
  * at_rest_init
  */
-function at_rest_init()
+function faaaster_at_rest_init()
 {
     // route url: domain.com/wp-json/$namespace/$route
     $namespace = 'hostmanager/v1';
@@ -416,7 +503,7 @@ function at_rest_init()
 
     register_rest_route($namespace, '/site_state', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'get_site_state',
+        'callback'  => 'faaaster_get_site_state',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
@@ -424,63 +511,91 @@ function at_rest_init()
 
     register_rest_route($namespace, '/get_check', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'get_check',
+        'callback'  => 'faaaster_get_check',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/db_prefix', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'get_db_prefix',
+        'callback'  => 'faaaster_get_db_prefix',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'plugin_upgrade',
+        'callback'  => 'faaaster_plugin_upgrade',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/plugin_install', array(
         'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'plugin_install',
+        'callback'  => 'faaaster_plugin_install',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/plugin_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'plugin_toggle',
+        'callback'  => 'faaaster_plugin_toggle',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/plugin_list', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'plugin_list',
+        'callback'  => 'faaaster_plugin_list',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/update_core', array(
+        'methods' => WP_REST_Server::CREATABLE,
+        'callback' => 'faaaster_update_core',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/reinstall_core', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_reinstall_core',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/reinstall_plugins', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_reinstall_plugins',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/integrity_check', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'faaaster_integrity_check',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/clear_cache', array(
         'methods'   => WP_REST_Server::CREATABLE,
-        'callback'  => 'clear_cache',
+        'callback'  => 'faaaster_clear_cache',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/toggle_email', array(
         'methods' => WP_REST_Server::CREATABLE,
-        'callback' => 'handle_email_control',
+        'callback' => 'faaaster_handle_email_control',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route($namespace, '/astra_key', array(
         'methods' => WP_REST_Server::CREATABLE,
-        'callback' => 'handle_astra_key',
+        'callback' => 'faaaster_handle_astra_key',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
@@ -513,20 +628,20 @@ function at_rest_init()
 
     register_rest_route($namespacePublic, '/toggle_mu_plugin', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'toggle_mu_plugin',
+        'callback'  => 'faaaster_toggle_mu_plugin',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 
     register_rest_route('sso/v1', '/login', array(
         'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'login',
+        'callback'  => 'faaaster_login',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
 }
 
-add_action('rest_api_init', 'at_rest_init');
+add_action('rest_api_init', 'faaaster_at_rest_init');
 
 if (defined('HIDE_WP_ERRORS') == false) {
     define('HIDE_WP_ERRORS', true);
@@ -560,9 +675,8 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 
 // Manage Cloudflare cache
-
 if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
-    function cf_purge_all()
+    function faaaster_cf_purge_all()
     {
         // error_log("Purge everything");
         $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
@@ -595,7 +709,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         }
     }
 
-    function cf_purge_urls($urls)
+    function faaaster_cf_purge_urls($urls)
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
@@ -631,8 +745,8 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         }
     }
 
-    add_action('rt_nginx_helper_after_fastcgi_purge_all', 'cf_purge_all', PHP_INT_MAX);
-    add_action('rt_nginx_helper_fastcgi_purge_url', 'cf_purge_urls', PHP_INT_MAX, 1);
+    add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
+    add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
 
 
     # trigger event if component updated
@@ -722,14 +836,14 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
             );
             // Make the API call
             if (!wp_remote_post($url, $args)) {
-                error_log("Update event error: " . $response->get_error_message());
+                error_log("Update event error");
             }
         }
     }
     add_action('upgrader_process_complete', 'faaaster_updater_updated_action', 10, 2);
 
     // Manage core updates
-    function on_wp_core_update($wp_version)
+    function faaaster_on_wp_core_update($wp_version)
     {
         // Retrieve the old version
         $old_version = get_option('wp_pre_update_version');
@@ -765,13 +879,13 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Update event error: " . $response->get_error_message());
+            error_log("Update event error");
         }
 
         // Clean up the transient
         delete_transient('wp_old_version');
     }
-    add_action('_core_updated_successfully', 'on_wp_core_update');
+    add_action('_core_updated_successfully', 'faaaster_on_wp_core_update');
 
     // Capture old theme version
     function faaaster_capture_old_theme_version($true, $hook_extra)
@@ -790,7 +904,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
     add_action('upgrader_pre_install', 'faaaster_capture_old_theme_version', 10, 2);
 
     // Capture old core version
-    function capture_wp_current_version()
+    function faaaster_capture_wp_current_version()
     {
         if (!get_option('wp_pre_update_version')) {
             update_option('wp_pre_update_version', get_bloginfo('version'));
@@ -798,7 +912,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
             update_option('wp_pre_update_version', get_bloginfo('version'));
         }
     }
-    add_action('admin_init', 'capture_wp_current_version');
+    add_action('admin_init', 'faaaster_capture_wp_current_version');
 
     // Activation hook
     function faaaster_plugin_activate_action($plugin, $action)
@@ -835,7 +949,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Install event error: " . $response->get_error_message());
+            error_log("Install event error");
         }
     }
     add_action('activated_plugin', function ($plugin) {
@@ -881,7 +995,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled) {
         );
         // Make the API call
         if (!wp_remote_post($url, $args)) {
-            error_log("Install event error: " . $response->get_error_message());
+            error_log("Install event error");
         }
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);

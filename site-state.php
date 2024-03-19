@@ -12,7 +12,7 @@ class SiteState
     {
         $plugins_state = array();
         $themes_state = array();
-        $plugins_cli = json_decode(shell_exec('wp plugin list --skip-plugins --format=json --fields="name, status, description, update, title, version, file, update_version, update_package"'));
+        $plugins_cli = json_decode(shell_exec('wp plugin list --skip-plugins --skip-themes --format=json --fields="name, status, description, update, title, version, file, update_version, update_package"'));
 
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
