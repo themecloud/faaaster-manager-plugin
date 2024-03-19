@@ -18,6 +18,8 @@ $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : false;
+$private = defined('PRIVATE_MODE') ? PRIVATE_MODE : false;
+
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
@@ -421,8 +423,7 @@ function faaaster_run_static_export()
 // Intercept emails 
 function faaaster_intercept_emails($args)
 {
-    $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : false;
-    if (get_option('disable_emails') === 'yes' && $private === "true") {
+    if (get_option('disable_emails') === 'yes' && $private == true) {
         return []; // Returning an empty array to cancel email sending
     }
     return $args;
@@ -442,8 +443,50 @@ function faaaster_get_db_prefix()
     return new WP_REST_Response($data, 200);
 }
 
-// Login
+function get_patterns_list(WP_REST_Request $request)
+{
+    // $file_name = sanitize_file_name($request->get_param('file'));
+    $file_name = $request->get_param('file');
+    error_log("FILE NAME = " .  $file_name);
+    $file_path = "/app/conf/" . $file_name;
+
+    $patterns_raw = file($file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    // Filter out commented lines
+    $patterns = array_values(array_filter($patterns_raw, function ($line) {
+        return strpos($line, '#') !== 0;
+    }));
+
+    return new WP_REST_Response($patterns, 200);
+}
+
+function update_patterns_list(WP_REST_Request $request)
+{
+    $params = $request->get_json_params();
+    $file_name = $params['file'];
+    $file_path = "/app/conf/" . $file_name;
+
+    $action = $params['action']; // 'add' or 'remove'
+    $pattern = $params['pattern'];
+
+    $patterns = file($file_path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+
+    if ('add' === $action && !in_array($pattern, $patterns)) {
+        $patterns[] = $pattern;
+    } elseif ('remove' === $action) {
+        $key = array_search($pattern, $patterns);
+        if (false !== $key) {
+            unset($patterns[$key]);
+        }
+    }
+
+    file_put_contents($file_path, implode(PHP_EOL, $patterns));
+
+    return new WP_REST_Response($patterns, 200);
+}
+
 function faaaster_login()
+
 {
     include('request/index.php');
 }
@@ -568,6 +611,18 @@ function faaaster_at_rest_init()
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_run_static_export',
         'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/list_qa_patterns', array(
+        'methods' => 'GET',
+        'callback' => 'get_patterns_list',
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/update_qa_patterns', array(
+        'methods' => 'POST',
+        'callback' => 'update_patterns_list',
         'permission_callback' => '__return_true',
     ));
 

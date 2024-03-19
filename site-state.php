@@ -109,6 +109,7 @@ class SiteState
         $debug_mode = self::isDebugModeActive();
         $indexable = self::isIndexable();
         $autoload_size = self::getAutoloadSize();
+        $emails_disabled = get_option('disable_emails');
 
         $site_info = array(
             'platform'            => 'wordpress',
@@ -134,7 +135,8 @@ class SiteState
             "is_network"          => ((is_multisite()) ? 1 : 0),
             "debug_mode"     => $debug_mode,
             "indexable"     => $indexable,
-            "autoload_size" => $autoload_size
+            "autoload_size" => $autoload_size,
+            "emails_disabled" => $emails_disabled
         );
 
         if (is_multisite() && is_numeric($blog_id)) {
