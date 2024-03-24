@@ -18,7 +18,7 @@ $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
-$private = defined('PRIVATE_MODE') ? PRIVATE_MODE : false;
+$private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 
@@ -427,7 +427,7 @@ function faaaster_run_static_export()
 // Intercept emails
 function faaaster_intercept_emails($args)
 {
-    if (get_option('disable_emails') === 'yes' && $private == true) {
+    if (get_option('disable_emails') === 'yes' && $private == "true") {
         return []; // Returning an empty array to cancel email sending
     }
     return $args;
