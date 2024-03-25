@@ -626,7 +626,6 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 // Manage Cloudflare cache
 if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
-    error_log("CF CACHE ENABLED " . $cfcache_enabled);
     function faaaster_cf_purge_all()
     {
         // error_log("Purge everything");
