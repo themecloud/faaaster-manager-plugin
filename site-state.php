@@ -13,7 +13,7 @@ class SiteState
         $plugins_state = array();
         $themes_state = array();
         $plugins_cli = json_decode(shell_exec('wp plugin list --skip-plugins --skip-themes --format=json --fields="name, status, description, update, title, version, file, update_version, update_package"'));
-
+        $themes_cli = json_decode(shell_exec('wp theme list --skip-plugins --skip-themes --format=json --fields="name, status, update, title, version, update_version"'));
         if (!function_exists('get_plugins')) {
             require_once ABSPATH . 'wp-admin/includes/plugin.php';
         }
@@ -27,11 +27,12 @@ class SiteState
                 $plugins_state[] = $state->get_wp_info();
             endif;
         }
-
-        $themes = wp_get_themes(array('errors' => null));
-        foreach ($themes as $slug => $theme) {
-            if ($theme['Version']) {
-                $state = new ProductState($slug, $slug, $theme['Name'], $theme->get('Description'), 'theme', $theme['Version'], $theme['update'], 0, 1);
+        $themes_cli = (array)  $themes_cli;
+        foreach ($themes_cli as $theme) {
+            if ($theme->version) {
+                $theme = (array) $theme;
+                $theme['active'] = $theme['status'] == 'active' ? "1" : "0";
+                $state = new ProductState($theme['name'], $theme['name'], $theme['title'], "",'theme', $theme['version'], $theme['update_version'], 1, $theme['active']);
                 $state->set_active($slug);
                 $state->set_screenshot(self::get_theme_screenshot_url($slug));
                 $themes_state[] = $state->get_wp_info();

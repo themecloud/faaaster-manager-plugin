@@ -51,6 +51,7 @@ function faaaster_disable_filters_for_manager_plugin($response)
 add_action('rest_api_init', 'faaaster_disable_filters_for_manager_plugin');
 
 require_once('plugin.php');
+require_once('theme.php');
 require_once('core.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
@@ -239,6 +240,27 @@ function faaaster_plugin_toggle($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restToggle($request);
+}
+
+// Update theme
+function faaaster_theme_upgrade($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->theme_upgrade($request);
+}
+
+// Install theme
+function faaaster_theme_install($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->restInstall($request);
+}
+
+// Activate / deactivate theme
+function faaaster_theme_toggle($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->restToggle($request);
 }
 
 // List plugins
@@ -502,6 +524,27 @@ function faaaster_at_rest_init()
     register_rest_route($namespace, '/plugin_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_plugin_toggle',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_upgrade', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_upgrade',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_install', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_install',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_toggle', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_toggle',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
