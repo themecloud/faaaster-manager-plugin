@@ -14,15 +14,23 @@ if (!file_exists('/app/.include/manager.php')) {
 }
 require_once('/app/.include/manager.php');
 
+global $active_plugins;
+global $app_id;
+global $branch;
+global $wp_api_key;
+global $cfcache_enabled;
+global $private;
+
 $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
-
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
+$active_plugins = ( array ) get_option( 'active_plugins', [] );
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
+//if (strpos($request_url, 'sso') !== false){
     require_once ABSPATH . 'wp-load.php';
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
@@ -151,6 +159,10 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
 
 function faaaster_manager_clear_all_cache()
 {
+    global $app_id;
+    global $branch;
+    global $wp_api_key;
+    global $cfcache_enabled;
     // OP Cache
     opcache_reset();
 
@@ -212,10 +224,11 @@ function faaaster_toggle_mu_plugin($request)
 // Get site info
 function faaaster_get_site_state()
 {
+    global $active_plugins;
     global $siteState;
     $data = array(
         "code" => "ok",
-        "data" => $siteState->get_site_full_state()
+        "data" => $siteState->get_site_full_state($active_plugins)
     );
 
     return new WP_REST_Response($data, 200);
@@ -449,6 +462,7 @@ function faaaster_run_static_export()
 // Intercept emails
 function faaaster_intercept_emails($args)
 {
+    global $private;
     if (get_option('disable_emails') === 'yes' && $private == "true") {
         return []; // Returning an empty array to cancel email sending
     }
