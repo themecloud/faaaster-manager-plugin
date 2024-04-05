@@ -40,7 +40,7 @@ class CoreUpgrade
                 }
             }
 
-            $update = find_core_update($args['version'], $args['locale']);
+            $update = find_core_update($new_args['version'], $new_args['locale']);
         }
         if (!$update) {
             return [
