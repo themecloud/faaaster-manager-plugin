@@ -686,20 +686,9 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
     function faaaster_cf_purge_all()
     {
 
-        // Write the timestamp for static assets
-        $timestamp = time(); // Get the current Unix timestamp.
-
-        // Attempt to open the file for writing. If it doesn't exist, try to create it.
-        $fileHandle = fopen("/app/conf/cache-timestamp", 'w');
-
-        if (!$fileHandle) {
-            // If the file couldn't be opened or created, return an error.
-            error_log("Cache timestamp update error");
-        }
-
-        // Write the timestamp to the file and close.
-        fwrite($fileHandle, $timestamp);
-        fclose($fileHandle);
+        // Store timestamp
+        $timestamp = time();
+        update_option('faaaster_bust_timestamp', $timestamp);
 
         // error_log("Purge everything");
         $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
@@ -767,6 +756,18 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
             }
         }
     }
+
+    function append_cache_bust_query_string($src)
+    {
+        // Retrieve the cache busting timestamp from WP options
+        $cache_bust = get_option('faaaster_bust_timestamp', time());
+        // Append the cache busting query parameter to the URL
+        $modified_src = add_query_arg('fstrcache', $cache_bust, $src);
+        return $modified_src;
+    }
+
+    add_filter('script_loader_src', 'append_cache_bust_query_string', 10, 1);
+    add_filter('style_loader_src', 'append_cache_bust_query_string', 10, 1);
 
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
