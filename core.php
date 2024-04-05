@@ -3,11 +3,11 @@ class CoreUpgrade
 {
     public function core_update(array $args = []): array
     {
-        $args = wp_parse_args($args, [
+        $new_args = wp_parse_args($args, [
             'locale'  => get_locale(),
             'version' => get_bloginfo('version')
         ]);
-       
+
         //$args['locale']="fr_FR";
         // error_log("version ".$args['version']);
         // error_log("locale ".$args['locale']);
@@ -24,23 +24,23 @@ class CoreUpgrade
         }
 
         // Fetch available core updates
-        if($args['version'] && $args['locale']){
+        if ($args['version'] && $args['locale']) {
             // WIP doesn't work for rollbacks
             var_dump($args['version'] . ">> " . $args['locale']);
             $update = find_core_update($args['version'], $args['locale']);
-        }else{
+        } else {
             $available_updates = get_core_updates();
-            if ($args['version'] === get_bloginfo('version') && !empty($available_updates)) {
+            if ($new_args['version'] === get_bloginfo('version') && !empty($available_updates)) {
                 foreach ($available_updates as $update) {
                     if ($update->response == 'upgrade' && version_compare($update->current, $args['version'], '>')) {
                         // If an upgrade is available and newer than the current version, use it
-                        $args['version'] = $update->current;
+                        $new_args['version'] = $update->current;
                         break;
                     }
                 }
             }
 
-        $update = find_core_update($args['version'], $args['locale']);
+            $update = find_core_update($args['version'], $args['locale']);
         }
         if (!$update) {
             return [
