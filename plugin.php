@@ -62,7 +62,7 @@ class PluginUpgrade
                 foreach ($pluginUpdates as $slug => $pluginName) {
                     if ($plugin == $pluginName->update->slug) {
                         // $plugin = $pluginName->update->plugin;
-                        $plugin=$slug;
+                        $plugin = $slug;
                         $foundPlugin = true;
                     };
                 }
@@ -87,7 +87,7 @@ class PluginUpgrade
                 $pluginPath = "";
 
                 foreach ($pluginList as $slug => $pluginName) {
-                    $pluginSlug=strtok($slug, '/');
+                    $pluginSlug = strtok($slug, '/');
                     if ($pluginSlug == $plugin) {
                         $pluginPath = $slug;
                     }
@@ -207,15 +207,15 @@ class PluginUpgrade
             $status = $param['status'];
 
             if ($status == "activate") {
-                exec('wp plugin activate --skip-plugins ' . $plugin, $output,$return_var );
-                if($return_var==0){
+                exec('wp plugin activate --skip-plugins ' . $plugin, $output, $return_var);
+                if ($return_var == 0) {
                     $data_for_response = array(
                         "code"    => "success",
                         "message" => $output[0],
                         "data"    => array("status" => 200, "res" => true)
                     );
                     return new WP_REST_Response($data_for_response, 200);
-                }else{
+                } else {
                     $data_for_response = array(
                         "code"    => "error",
                         "message" => $output[0],
@@ -224,15 +224,15 @@ class PluginUpgrade
                     return new WP_REST_Response($data_for_response, 500);
                 }
             } else if ($status == "disable") {
-                exec('wp plugin deactivate --skip-plugins ' . $plugin, $output,$return_var );
-                if($return_var==0){
+                exec('wp plugin deactivate --skip-plugins ' . $plugin, $output, $return_var);
+                if ($return_var == 0) {
                     $data_for_response = array(
                         "code"    => "success",
                         "message" => $output[0],
                         "data"    => array("status" => 200, "res" => true)
                     );
                     return new WP_REST_Response($data_for_response, 200);
-                }else{
+                } else {
                     $data_for_response = array(
                         "code"    => "error",
                         "message" => $output[0],
@@ -311,68 +311,6 @@ class PluginUpgrade
 
             return new WP_REST_Response($data_for_response, 500);
         }
-    }
-
-    public function activatePlugin($plugin)
-    {
-        $pluginBaseName = self::is_plugin_installed($plugin);
-
-        if (!$pluginBaseName) {
-            return "Plugin not installed";
-        }
-
-        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
-
-        if (is_plugin_active($pluginBaseName)) return true;
-        $error = activate_plugin($plugin_mainfile);
-        if (is_wp_error($error)) {
-            return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
-                . '<br/>This probably means the main file\'s name does not match the slug.'
-                . '<br/>Check the plugins listing in wp-admin.'
-                . "<br/>\n"
-                . var_export($error->get_error_code(), true) . ': '
-                . var_export($error->get_error_message(), true)
-                . "\n";
-        }
-
-        return true;
-    }
-
-    public function disablePlugin($plugin)
-    {
-        $pluginBaseName = self::is_plugin_installed($plugin);
-
-        if (!$pluginBaseName) {
-            return "Plugin not installed";
-        }
-
-        $plugin_mainfile = trailingslashit(WP_PLUGIN_DIR) . $pluginBaseName;
-
-
-        if (!is_plugin_active($pluginBaseName)) return true;
-
-        try {
-            $error = deactivate_plugins($plugin_mainfile);
-
-            if (is_wp_error($error)) {
-                return 'Error: Plugin has not been activated (' . $pluginBaseName . ').'
-                    . '<br/>This probably means the main file\'s name does not match the slug.'
-                    . '<br/>Check the plugins listing in wp-admin.'
-                    . "<br/>\n"
-                    . var_export($error->get_error_code(), true) . ': '
-                    . var_export($error->get_error_message(), true)
-                    . "\n";
-            }
-            return true;
-        } catch (\Exception $e) {
-            return [
-                'status' => 'error',
-                'code' => 'activation_fail',
-                'data' => $result
-            ];
-        }
-
-
     }
 
     /**
@@ -461,11 +399,12 @@ class PluginUpgrade
     public function is_plugin_installed($plugin)
     {
         $plugins = get_plugins();
-        foreach ($plugins as $slug => $pluginName){
-            $pluginSlug=strtok($slug, '/');
+        foreach ($plugins as $slug => $pluginName) {
+            $pluginSlug = strtok($slug, '/');
             if ($plugin == $pluginSlug) {
-                return $slug;}
+                return $slug;
             }
+        }
 
         return false;
     }

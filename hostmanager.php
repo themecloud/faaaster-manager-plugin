@@ -14,15 +14,23 @@ if (!file_exists('/app/.include/manager.php')) {
 }
 require_once('/app/.include/manager.php');
 
+global $active_plugins;
+global $app_id;
+global $branch;
+global $wp_api_key;
+global $cfcache_enabled;
+global $private;
+
 $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
-
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
+$active_plugins = ( array ) get_option( 'active_plugins', [] );
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
+//if (strpos($request_url, 'sso') !== false){
     require_once ABSPATH . 'wp-load.php';
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
@@ -51,6 +59,7 @@ function faaaster_disable_filters_for_manager_plugin($response)
 add_action('rest_api_init', 'faaaster_disable_filters_for_manager_plugin');
 
 require_once('plugin.php');
+require_once('theme.php');
 require_once('core.php');
 require_once('site-state.php');
 require_once('mu-plugin-manager.php');
@@ -150,6 +159,10 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
 
 function faaaster_manager_clear_all_cache()
 {
+    global $app_id;
+    global $branch;
+    global $wp_api_key;
+    global $cfcache_enabled;
     // OP Cache
     opcache_reset();
 
@@ -211,10 +224,11 @@ function faaaster_toggle_mu_plugin($request)
 // Get site info
 function faaaster_get_site_state()
 {
+    global $active_plugins;
     global $siteState;
     $data = array(
         "code" => "ok",
-        "data" => $siteState->get_site_full_state()
+        "data" => $siteState->get_site_full_state($active_plugins)
     );
 
     return new WP_REST_Response($data, 200);
@@ -239,6 +253,27 @@ function faaaster_plugin_toggle($request)
 {
     $pluginUpgrader = new PluginUpgrade();
     return $pluginUpgrader->restToggle($request);
+}
+
+// Update theme
+function faaaster_theme_upgrade($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->theme_upgrade($request);
+}
+
+// Install theme
+function faaaster_theme_install($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->restInstall($request);
+}
+
+// Activate / deactivate theme
+function faaaster_theme_toggle($request)
+{
+    $themeUpgrader = new ThemeUpgrade();
+    return $themeUpgrader->restToggle($request);
 }
 
 // List plugins
@@ -289,7 +324,7 @@ function faaaster_update_core($request)
 {
     $params = $request->get_query_params();
     $coreUpgrader = new CoreUpgrade();
-    return $coreUpgrader->core_update($params);
+    return $params ? $coreUpgrader->core_update($params) : $coreUpgrader->core_update();
 }
 
 // Reinstall core from wp.org
@@ -427,6 +462,7 @@ function faaaster_run_static_export()
 // Intercept emails
 function faaaster_intercept_emails($args)
 {
+    global $private;
     if (get_option('disable_emails') === 'yes' && $private == "true") {
         return []; // Returning an empty array to cancel email sending
     }
@@ -502,6 +538,27 @@ function faaaster_at_rest_init()
     register_rest_route($namespace, '/plugin_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_plugin_toggle',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_upgrade', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_upgrade',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_install', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_install',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/theme_toggle', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_theme_toggle',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
@@ -628,6 +685,11 @@ add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
     function faaaster_cf_purge_all()
     {
+
+        // Store timestamp
+        $timestamp = time();
+        update_option('faaaster_bust_timestamp', $timestamp);
+
         // error_log("Purge everything");
         $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
         $data = array(
@@ -695,9 +757,25 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
         }
     }
 
+    function append_cache_bust_query_string($src)
+    {
+        // Retrieve the cache busting timestamp from WP options
+        $cache_bust = get_option('faaaster_bust_timestamp', time());
+        // Append the cache busting query parameter to the URL
+        $modified_src = add_query_arg('fstrcache', $cache_bust, $src);
+        return $modified_src;
+    }
+
+    add_filter('script_loader_src', 'append_cache_bust_query_string', 10, 1);
+    add_filter('style_loader_src', 'append_cache_bust_query_string', 10, 1);
+
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
 
+}
+
+// Manage WordPress events
+if ($app_id && $wp_api_key && $branch) {
 
     # trigger event if component updated
     function faaaster_updater_updated_action($upgrader_object, $options)

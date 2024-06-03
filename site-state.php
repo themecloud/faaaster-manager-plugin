@@ -8,35 +8,47 @@ class SiteState
 {
     private static $site_state = array();
 
-    public function get_site_full_state()
+    public function get_site_full_state($active_plugins)
     {
-        $plugins_state = array();
-        $themes_state = array();
-        $plugins_cli = json_decode(shell_exec('wp plugin list --skip-plugins --skip-themes --format=json --fields="name, status, description, update, title, version, file, update_version, update_package"'));
+        if ( ! function_exists( 'get_plugins' ) || ! function_exists( 'get_mu_plugins' ) ) {
+			require_once ABSPATH . 'wp-admin/includes/plugin.php';
+		}
+        // Delete the transients that store update information
+        delete_site_transient('update_core');
+        delete_site_transient('update_plugins');
+        delete_site_transient('update_themes');
 
-        if (!function_exists('get_plugins')) {
-            require_once ABSPATH . 'wp-admin/includes/plugin.php';
-        }
+        // Include the file that contains the function to check for updates
+        require_once(ABSPATH . 'wp-admin/includes/update.php');
 
-        $plugins_cli = (array) $plugins_cli;
-        foreach ($plugins_cli as $plugin) {
-            if ($plugin->status != "must-use" && $plugin->status != "dropin") :
-                $plugin = (array) $plugin;
-                $plugin['active'] = $plugin['status'] == 'active' ? "1" : "0";
-                $state = new ProductState($plugin['file'], $plugin['file'], $plugin['title'], $plugin['description'], 'plugin', $plugin['version'], $plugin['update_version'], 1, $plugin['active']);
+        // Trigger WordPress to check for updates
+        wp_version_check();
+        wp_update_plugins();
+        wp_update_themes();
+
+		$wp_plugins         = get_plugins();
+		$plugin_update_data = get_site_transient( 'update_plugins' )->response ?? [];
+		foreach ( $wp_plugins as $name => $plugin ) {
+            
+			$slug  = explode( '/', $name );
+            $update_version = array_key_exists( $name, $plugin_update_data ) ? $plugin_update_data[ $name ]->new_version : '';
+            $active = in_array( $name, $active_plugins, true ) ? "1" : "0";
+            $state = new ProductState($slug[0], $slug[0], $plugin['Name'], "", 'plugin', $plugin['Version'],$update_version, 1,$active);
                 $plugins_state[] = $state->get_wp_info();
-            endif;
-        }
-
-        $themes = wp_get_themes(array('errors' => null));
-        foreach ($themes as $slug => $theme) {
-            if ($theme['Version']) {
-                $state = new ProductState($slug, $slug, $theme['Name'], $theme->get('Description'), 'theme', $theme['Version'], $theme['update'], 0, 1);
-                $state->set_active($slug);
-                $state->set_screenshot(self::get_theme_screenshot_url($slug));
-                $themes_state[] = $state->get_wp_info();
-            }
-        }
+		}
+        
+        $wp_themes         = wp_get_themes();
+		$current_theme     = wp_get_theme();
+		$theme_update_data = get_site_transient( 'update_themes' )->response ?? [];
+        foreach ( $wp_themes as $theme ) {
+			$stylesheet = $theme->get_stylesheet();
+            $update_version = array_key_exists( $stylesheet, $theme_update_data ) ? $theme_update_data[ $stylesheet ]['new_version'] : '';
+            $active = $stylesheet === $current_theme->get_stylesheet() ? "1" : "0";
+            $state = new ProductState($stylesheet, $stylesheet, $theme['Name'], "",'theme', $theme->get( 'Version' ),$update_version, 1, $active);
+            // $state->set_active($slug);
+            // $state->set_screenshot(self::get_theme_screenshot_url($slug));
+            $themes_state[] = $state->get_wp_info();
+		}
 
         return array(
             'site_info' => self::get_site_info(),
@@ -104,6 +116,22 @@ class SiteState
                 $time_zone = "America/Los_Angeles";
             }
         }
+       
+        function get_latest_wp_core_update_info() {
+            $updates = get_site_transient( 'update_core' );
+            // Check if there are any updates available
+            if (!empty($updates->updates) && is_array($updates->updates)) {
+                foreach ($updates->updates as $update) {
+                    // Check for the latest version that is not the current version
+                    if ($update->response == 'upgrade' && version_compare($update->current, get_bloginfo('version'), '>')) {
+                        // Return the update information
+                        return  $update->current;
+                    }
+                }
+            }
+            return "";
+        }
+
 
         $server_software = isset($_SERVER['SERVER_SOFTWARE']) && trim($_SERVER['SERVER_SOFTWARE']) !== '' ? $_SERVER['SERVER_SOFTWARE'] : 'unknown';
         $debug_mode = self::isDebugModeActive();
@@ -118,6 +146,7 @@ class SiteState
             'site_title'          => $site_title,
             'site_screenshot_url' => $home_url,
             'platform_version'    => $wp_version,
+            'platform_update'     => get_latest_wp_core_update_info(),
             'php_version'         => PHP_VERSION,
             'mysql_version'       => $sql_version,
             'timezone'            => $time_zone, //todo check on multisite

@@ -3,11 +3,11 @@ class CoreUpgrade
 {
     public function core_update(array $args = []): array
     {
-        $args = wp_parse_args($args, [
+        $new_args = wp_parse_args($args, [
             'locale'  => get_locale(),
             'version' => get_bloginfo('version')
         ]);
-       
+
         //$args['locale']="fr_FR";
         // error_log("version ".$args['version']);
         // error_log("locale ".$args['locale']);
@@ -23,18 +23,36 @@ class CoreUpgrade
             require_once ABSPATH . 'wp-admin/includes/misc.php';
         }
 
-        $update = find_core_update($args['version'], $args['locale']);        
+        // Fetch available core updates
+        if ($args['version'] && $args['locale']) {
+            // WIP doesn't work for rollbacks
+            var_dump($args['version'] . ">> " . $args['locale']);
+            $update = find_core_update($args['version'], $args['locale']);
+        } else {
+            $available_updates = get_core_updates();
+            if ($new_args['version'] === get_bloginfo('version') && !empty($available_updates)) {
+                foreach ($available_updates as $update) {
+                    if ($update->response == 'upgrade' && version_compare($update->current, $args['version'], '>')) {
+                        // If an upgrade is available and newer than the current version, use it
+                        $new_args['version'] = $update->current;
+                        break;
+                    }
+                }
+            }
+
+            $update = find_core_update($new_args['version'], $new_args['locale']);
+        }
         if (!$update) {
             return [
-                'message' => esc_html('Update not found!'),
+                'message' => esc_html__('Update not found!'),
                 'status'  => false,
             ];
         }
 
         /*
-     * Allow relaxed file ownership writes for User-initiated upgrades when the API specifies
-    * that it's safe to do so. This only happens when there are no new files to create.
-    */
+        * Allow relaxed file ownership writes for User-initiated upgrades when the API specifies
+        * that it's safe to do so. This only happens when there are no new files to create.
+        */
         $allow_relaxed_file_ownership = isset($update->new_files) && !$update->new_files;
 
         if (!class_exists('WP_Upgrader')) {
