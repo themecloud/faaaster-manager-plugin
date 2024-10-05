@@ -27,10 +27,10 @@ $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
-$active_plugins = ( array ) get_option( 'active_plugins', [] );
+$active_plugins = (array) get_option('active_plugins', []);
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
-//if (strpos($request_url, 'sso') !== false){
+    //if (strpos($request_url, 'sso') !== false){
     require_once ABSPATH . 'wp-load.php';
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
@@ -489,6 +489,85 @@ function faaaster_login()
     include('request/index.php');
 }
 
+// Push to repository
+function faaaster_push_to_repo($request)
+{
+    $params = $request->get_query_params();
+    $type = $params['type'];
+    $slug = $params['slug'];
+
+    // Path to the WordPress plugins or themes directory
+    $base_path = ($type === 'plugin') ? WP_PLUGIN_DIR : get_theme_root();
+    $dir_path = $base_path . '/' . $slug;
+
+    // Check if the target directory exists
+    if (!is_dir($dir_path)) {
+        return new WP_Error('no_directory', 'Error: Target directory does not exist.', array('status' => 404));
+    }
+
+    // Path for the temporary zip file
+    $upload_dir = wp_upload_dir();
+    $zip_file_path = $upload_dir['path'] . '/' . $slug . '.zip';
+
+    // Create a zip of the directory
+    $zip = new ZipArchive();
+    if ($zip->open($zip_file_path, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
+        return new WP_Error('zip_error', 'Error: Cannot open the ZIP file.', array('status' => 500));
+    }
+
+    // Add the directory to the zip file
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($dir_path),
+        RecursiveIteratorIterator::LEAVES_ONLY
+    );
+
+    foreach ($files as $name => $file) {
+        if (!$file->isDir()) {
+            // Get the real and relative path for the current file
+            $filePath = $file->getRealPath();
+            $relativePath = substr($filePath, strlen($dir_path) + 1);
+
+            // Add current file to archive
+            $zip->addFile($filePath, $relativePath);
+        }
+    }
+
+    // Close the zip archive
+    $zip->close();
+
+    // Return the URL to the zip file
+    $zip_file_url = $upload_dir['url'] . '/' . $slug . '.zip';
+    return rest_ensure_response(array('zip_file_url' => $zip_file_url));
+}
+
+
+// Function to handle the incoming modified ZIP file
+function faaaster_pull_from_repo($request)
+{
+    $params = $request->get_params();
+    $slug = isset($params['slug']) ? $params['slug'] : '';
+
+    if (empty($slug)) {
+        return new WP_Error('missing_params', 'Error: Missing slug parameter.', array('status' => 400));
+    }
+
+    // Get the uploaded file
+    $file = $request->get_file_params();
+    if (empty($file['zip']['tmp_name'])) {
+        return new WP_Error('missing_file', 'Error: Missing ZIP file.', array('status' => 400));
+    }
+
+    // Path to save the modified ZIP file
+    $save_path = WP_CONTENT_DIR . '/uploads/' . $slug . '.zip';
+
+    // Move the uploaded file to the target directory
+    if (!move_uploaded_file($file['zip']['tmp_name'], $save_path)) {
+        return new WP_Error('move_failed', 'Error: Failed to move the uploaded file.', array('status' => 500));
+    }
+
+    return rest_ensure_response(array('message' => 'File uploaded successfully', 'path' => $save_path));
+}
+
 /**
  * at_rest_init
  */
@@ -633,6 +712,29 @@ function faaaster_at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
+    register_rest_route($namespace, '/push_to_repo', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_push_to_repo',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
+
+    register_rest_route($namespace, '/pull_from_repo', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => 'faaaster_pull_from_repo',
+        'args' => array(),
+        // 'args' => array(
+        //     'slug' => array(
+        //         'required' => true,
+        //         'type' => 'string',
+        //         'validate_callback' => function ($param, $request, $key) {
+        //             return !empty($param);
+        //         }
+        //     ),
+        // ),
+        'permission_callback' => '__return_true',
+    ));
+
     register_rest_route($namespacePublic, '/toggle_mu_plugin', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_toggle_mu_plugin',
@@ -771,7 +873,6 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
 
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
-
 }
 
 // Manage WordPress events
