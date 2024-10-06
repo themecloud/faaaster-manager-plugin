@@ -27,10 +27,10 @@ $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
-$active_plugins = ( array ) get_option( 'active_plugins', [] );
+$active_plugins = (array) get_option('active_plugins', []);
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
-//if (strpos($request_url, 'sso') !== false){
+    //if (strpos($request_url, 'sso') !== false){
     require_once ABSPATH . 'wp-load.php';
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
@@ -771,7 +771,6 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
 
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
-
 }
 
 // Manage WordPress events
@@ -1027,4 +1026,74 @@ if ($app_id && $wp_api_key && $branch) {
         }
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);
+
+
+
+
+    // Catch PHP shutdown errors
+    function faaaster_catch_fatal_errors()
+    {
+        $error = error_get_last();
+        if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR])) {
+            $error_message = "Fatal error: {$error['message']} in {$error['file']} on line {$error['line']}";
+            $error_hash = md5($error_message);
+
+            // Check if this error is already stored in transients
+            $error_data = get_transient('faaaster_php_error_' . $error_hash);
+
+            if (false === $error_data) {
+                // If not, store it in transients with alert_sent set to false
+                $error_data = [
+                    'message' => $error_message,
+                    'alert_sent' => false
+                ];
+                set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+            }
+
+            // Check if alert has not been sent
+            if (!$error_data['alert_sent']) {
+                // Call the API to log the error alert
+                faaaster_log_error_alert($error_message);
+
+                // Update the transient to mark alert as sent
+                $error_data['alert_sent'] = true;
+                set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+            }
+        }
+    }
+
+    // Function to call the API for logging error alerts
+    function faaaster_log_error_alert($error_message)
+    {
+        global $app_id, $branch, $wp_api_key;
+
+        $url = "https://app.faaaster.io/api/webhook-event/";
+        $data = array(
+            'event' => "php_error",
+            'data' => array(
+                'message' => $error_message,
+                'date' => current_time('mysql'),
+            ),
+            'app_id' => $app_id,
+            'instance' => $branch,
+        );
+
+        // Define the request arguments
+        $args = array(
+            'body' => json_encode($data),
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'Authorization' => 'Bearer ' . $wp_api_key,
+            ),
+        );
+
+        // Make the API call
+        $response = wp_remote_post($url, $args);
+
+        if (is_wp_error($response)) {
+            error_log("Failed to send error alert: " . $response->get_error_message());
+        }
+    }
+    // Register the shutdown function
+    register_shutdown_function('faaaster_catch_fatal_errors');
 }
