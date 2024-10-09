@@ -2,11 +2,11 @@
 
 /**
  * Plugin Name: Manager
- * Plugin URI: https://themecloud.io
+ * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
  * Version: 0.1.0
- * Author: Themecloud
- * Author URI: https://themecloud.io
+ * Author: Faaaster
+ * Author URI: https://faaaster.io
  * License: GPLv2 or later
  */
 if (!file_exists('/app/.include/manager.php')) {
@@ -15,9 +15,6 @@ if (!file_exists('/app/.include/manager.php')) {
 require_once('/app/.include/manager.php');
 
 global $active_plugins;
-global $app_id;
-global $branch;
-global $wp_api_key;
 global $cfcache_enabled;
 global $private;
 
@@ -28,6 +25,8 @@ $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 $active_plugins = (array) get_option('active_plugins', []);
+$faaaster_api_base = defined('CUSTOM_FAAASTER_API_BASE') ? CUSTOM_FAAASTER_API_BASE : 'https://app.faaaster.io';
+define('FAAASTER_API_BASE', $faaaster_api_base);
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     //if (strpos($request_url, 'sso') !== false){
@@ -159,9 +158,6 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
 
 function faaaster_manager_clear_all_cache()
 {
-    global $app_id;
-    global $branch;
-    global $wp_api_key;
     global $cfcache_enabled;
     // OP Cache
     opcache_reset();
@@ -174,7 +170,7 @@ function faaaster_manager_clear_all_cache()
     touch('/tmp/pagespeed/cache.flush');
 
     // Cloudflare
-    if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true" && function_exists('faaaster_cf_purge_all')) {
+    if (APP_ID && WP_API_KEY && BRANCH && $cfcache_enabled == "true" && function_exists('faaaster_cf_purge_all')) {
         faaaster_cf_purge_all();
     }
 
@@ -691,7 +687,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
         update_option('faaaster_bust_timestamp', $timestamp);
 
         // error_log("Purge everything");
-        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
+        $url = FAAASTER_API_BASE . "/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
         $data = array(
             'scope' => 'everything',
         );
@@ -725,7 +721,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
     {
 
         // error_log("Purge urls" . JSON_ENCODE($urls));
-        $url = "https://app.faaaster.io/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
+        $url = FAAASTER_API_BASE . "/api/applications/" . APP_ID . "/instances/" . BRANCH . "/cloudflare";
         $data = array(
             'scope' => 'urls',
             'urls' => array($urls)
@@ -837,7 +833,7 @@ if ($app_id && $wp_api_key && $branch) {
             } elseif ($type === 'core' || $type === 'translation') {
                 return;
             }
-            $url = "https://app.faaaster.io/api/webhook-event/";
+            $url = FAAASTER_API_BASE . "/api/webhook-event/";
             $data = array(
                 'event' => "upgrader",
                 'data' => array(
@@ -881,7 +877,7 @@ if ($app_id && $wp_api_key && $branch) {
         $components[] = "WordPress" . " - " . $old_version . " >> " . $new_version;
         $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
         $date_time = current_time('mysql');
-        $url = "https://app.faaaster.io/api/webhook-event/";
+        $url = FAAASTER_API_BASE . "/api/webhook-event/";
         $data = array(
             'event' => "upgrader",
             'data' => array(
@@ -952,7 +948,7 @@ if ($app_id && $wp_api_key && $branch) {
         $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $plugin);
         $components = $plugin["Name"] . " - " . $plugin["Version"];
 
-        $url = "https://app.faaaster.io/api/webhook-event/";
+        $url = FAAASTER_API_BASE . "/api/webhook-event/";
         $data = array(
             'event' => $action,
             'data' => array(
@@ -997,7 +993,7 @@ if ($app_id && $wp_api_key && $branch) {
         // Format the date and time
         $date_time = current_time('mysql');
 
-        $url = "https://app.faaaster.io/api/webhook-event/";
+        $url = FAAASTER_API_BASE . "/api/webhook-event/";
         $data = array(
             'event' => "switch_theme",
             'data' => array(
@@ -1027,15 +1023,22 @@ if ($app_id && $wp_api_key && $branch) {
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);
 
-
-
-
     // Catch PHP shutdown errors
     function faaaster_catch_fatal_errors()
     {
         $error = error_get_last();
+        $error_type = match ($error['type']) {
+            E_ERROR => 'Fatal Error',
+            E_PARSE => 'Parse Error',
+            E_CORE_ERROR => 'Core Error',
+            E_COMPILE_ERROR => 'Compile Error',
+            E_USER_ERROR => 'User Error',
+            E_RECOVERABLE_ERROR => 'Recoverable Error',
+            default => 'Unknown Error',
+        };
         if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR])) {
-            $error_message = "Fatal error: {$error['message']} in {$error['file']} on line {$error['line']}";
+            $error_message = "PHP error of type {$error_type}: {$error['message']} in {$error['file']} on line {$error['line']}";
+
             $error_hash = md5($error_message);
 
             // Check if this error is already stored in transients
@@ -1053,7 +1056,7 @@ if ($app_id && $wp_api_key && $branch) {
             // Check if alert has not been sent
             if (!$error_data['alert_sent']) {
                 // Call the API to log the error alert
-                faaaster_log_error_alert($error_message);
+                faaaster_log_error_alert($error_data['message'], $error_data['context']);
 
                 // Update the transient to mark alert as sent
                 $error_data['alert_sent'] = true;
@@ -1063,19 +1066,17 @@ if ($app_id && $wp_api_key && $branch) {
     }
 
     // Function to call the API for logging error alerts
-    function faaaster_log_error_alert($error_message)
+    function faaaster_log_error_alert($error_message, $error_context)
     {
-        global $app_id, $branch, $wp_api_key;
-
-        $url = "https://app.faaaster.io/api/webhook-event/";
+        $url = FAAASTER_API_BASE . "/api/webhook-event/";
         $data = array(
             'event' => "php_error",
             'data' => array(
                 'message' => $error_message,
                 'date' => current_time('mysql'),
             ),
-            'app_id' => $app_id,
-            'instance' => $branch,
+            'app_id' => APP_ID,
+            'instance' => BRANCH,
         );
 
         // Define the request arguments
@@ -1083,7 +1084,7 @@ if ($app_id && $wp_api_key && $branch) {
             'body' => json_encode($data),
             'headers' => array(
                 'Content-Type' => 'application/json',
-                'Authorization' => 'Bearer ' . $wp_api_key,
+                'Authorization' => 'Bearer ' . WP_API_KEY,
             ),
         );
 
@@ -1094,6 +1095,7 @@ if ($app_id && $wp_api_key && $branch) {
             error_log("Failed to send error alert: " . $response->get_error_message());
         }
     }
+
     // Register the shutdown function
     register_shutdown_function('faaaster_catch_fatal_errors');
 }
