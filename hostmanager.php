@@ -1027,16 +1027,17 @@ if ($app_id && $wp_api_key && $branch) {
     function faaaster_catch_fatal_errors()
     {
         $error = error_get_last();
-        $error_type = match ($error['type']) {
-            E_ERROR => 'Fatal Error',
-            E_PARSE => 'Parse Error',
-            E_CORE_ERROR => 'Core Error',
-            E_COMPILE_ERROR => 'Compile Error',
-            E_USER_ERROR => 'User Error',
-            E_RECOVERABLE_ERROR => 'Recoverable Error',
-            default => 'Unknown Error',
-        };
+
         if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR, E_RECOVERABLE_ERROR])) {
+            $error_type = match ($error['type']) {
+                E_ERROR => 'Fatal Error',
+                E_PARSE => 'Parse Error',
+                E_CORE_ERROR => 'Core Error',
+                E_COMPILE_ERROR => 'Compile Error',
+                E_USER_ERROR => 'User Error',
+                E_RECOVERABLE_ERROR => 'Recoverable Error',
+                default => 'Unknown Error',
+            };
             $error_message = "PHP error of type {$error_type}: {$error['message']} in {$error['file']} on line {$error['line']}";
 
             $error_hash = md5($error_message);
