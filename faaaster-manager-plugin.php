@@ -1023,6 +1023,12 @@ if ($app_id && $wp_api_key && $branch) {
     }
     add_action('switch_theme', 'faaaster_theme_deactivation_action', 10, 2);
 
+    // Serialize errior
+    function serializeError($params)
+    {
+        return md5(vsprintf('%s-%s-%s-%s', [$params['file'], $params['line'], $params['code'], $params['message']]));
+    }
+
     // Catch PHP shutdown errors
     function faaaster_catch_fatal_errors()
     {
@@ -1054,41 +1060,53 @@ if ($app_id && $wp_api_key && $branch) {
             }
             $error_message = "PHP error of type {$error_type}: {$error['message']} in {$error['file']} on line {$error['line']}";
 
-            $error_hash = md5($error_message);
+            $error_hash = serializeError($error);
 
             // Check if this error is already stored in transients
             $error_data = get_transient('faaaster_php_error_' . $error_hash);
 
             if (false === $error_data) {
-                // If not, store it in transients with alert_sent set to false
+                // If error data not found, store it in transients with alert_sent set to false
                 $error_data = [
                     'message' => $error_message,
                     'alert_sent' => false
                 ];
-                set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
-            }
-
-            // Check if alert has not been sent
-            if (!$error_data['alert_sent']) {
-                // Call the API to log the error alert
-                faaaster_log_error_alert($error_data['message'], $error_data['context']);
-
-                // Update the transient to mark alert as sent
-                $error_data['alert_sent'] = true;
-                set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+                $set_success = set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+                if (!$set_success) {
+                    // If failed to store error data, store a simplified version
+                    $error_message = "PHP error of type {$error_type} in {$error['file']} on line {$error['line']}";
+                    $error_data = [
+                        'message' => $error_message,
+                        'alert_sent' => false
+                    ];
+                    $set_success = set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+                    if ($set_success) {
+                        // Log the error alert
+                        faaaster_log_error_alert($error_data['message'], $error_data['context'], $error_hash);
+                        $error_data['alert_sent'] = true;
+                        set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+                    }
+                } else {
+                    // Log the error alert
+                    faaaster_log_error_alert($error_data['message'], $error_data['context'], $error_hash);
+                    $error_data['alert_sent'] = true;
+                    set_transient('faaaster_php_error_' . $error_hash, $error_data, WEEK_IN_SECONDS);
+                }
             }
         }
     }
 
     // Function to call the API for logging error alerts
-    function faaaster_log_error_alert($error_message, $error_context)
+    function faaaster_log_error_alert($error_message, $error_context, $error_hash)
     {
         $url = FAAASTER_API_BASE . "/api/webhook-event/";
         $data = array(
             'event' => "php_error",
             'data' => array(
                 'message' => $error_message,
+                'context' => $error_context,
                 'date' => current_time('mysql'),
+                'hash' => $error_hash,
             ),
             'app_id' => APP_ID,
             'instance' => BRANCH,
