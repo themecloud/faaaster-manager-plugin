@@ -10,51 +10,86 @@ class SiteState
 
     public function get_site_full_state($active_plugins)
     {
-        if ( ! function_exists( 'get_plugins' ) || ! function_exists( 'get_mu_plugins' ) ) {
-			require_once ABSPATH . 'wp-admin/includes/plugin.php';
-		}
-        // Delete the transients that store update information
-        delete_site_transient('update_core');
-        delete_site_transient('update_plugins');
-        delete_site_transient('update_themes');
+        // Set error reporting to suppress notices and warnings
+        $error_reporting = error_reporting();
+        error_reporting(E_ERROR | E_PARSE);
 
-        // Include the file that contains the function to check for updates
-        require_once(ABSPATH . 'wp-admin/includes/update.php');
+        // Start output buffering at the highest level
+        while (ob_get_level()) {
+            ob_end_clean();
+        }
+        ob_start();
 
-        // Trigger WordPress to check for updates
-        wp_version_check();
-        wp_update_plugins();
-        wp_update_themes();
+        try {
+            if (!function_exists('get_plugins') || !function_exists('get_mu_plugins')) {
+                require_once ABSPATH . 'wp-admin/includes/plugin.php';
+            }
 
-		$wp_plugins         = get_plugins();
-		$plugin_update_data = get_site_transient( 'update_plugins' )->response ?? [];
-		foreach ( $wp_plugins as $name => $plugin ) {
-            
-			$slug  = explode( '/', $name );
-            $update_version = array_key_exists( $name, $plugin_update_data ) ? $plugin_update_data[ $name ]->new_version : '';
-            $active = in_array( $name, $active_plugins, true ) ? "1" : "0";
-            $state = new ProductState($slug[0], $slug[0], $plugin['Name'], "", 'plugin', $plugin['Version'],$update_version, 1,$active);
+            // Delete the transients that store update information
+            delete_site_transient('update_core');
+            delete_site_transient('update_plugins');
+            delete_site_transient('update_themes');
+
+            // Include the file that contains the function to check for updates
+            require_once(ABSPATH . 'wp-admin/includes/update.php');
+
+            // Trigger WordPress to check for updates
+            wp_version_check();
+            wp_update_plugins();
+            wp_update_themes();
+
+            $plugins_state = [];
+            $themes_state = [];
+
+            $wp_plugins = get_plugins();
+            $plugin_update_data = get_site_transient('update_plugins')->response ?? [];
+            foreach ($wp_plugins as $name => $plugin) {
+                $slug = explode('/', $name);
+                $update_version = array_key_exists($name, $plugin_update_data) ? $plugin_update_data[$name]->new_version : '';
+                $active = in_array($name, $active_plugins, true) ? "1" : "0";
+                $state = new ProductState($slug[0], $slug[0], $plugin['Name'], "", 'plugin', $plugin['Version'], $update_version, 1, $active);
                 $plugins_state[] = $state->get_wp_info();
-		}
-        
-        $wp_themes         = wp_get_themes();
-		$current_theme     = wp_get_theme();
-		$theme_update_data = get_site_transient( 'update_themes' )->response ?? [];
-        foreach ( $wp_themes as $theme ) {
-			$stylesheet = $theme->get_stylesheet();
-            $update_version = array_key_exists( $stylesheet, $theme_update_data ) ? $theme_update_data[ $stylesheet ]['new_version'] : '';
-            $active = $stylesheet === $current_theme->get_stylesheet() ? "1" : "0";
-            $state = new ProductState($stylesheet, $stylesheet, $theme['Name'], "",'theme', $theme->get( 'Version' ),$update_version, 1, $active);
-            // $state->set_active($slug);
-            // $state->set_screenshot(self::get_theme_screenshot_url($slug));
-            $themes_state[] = $state->get_wp_info();
-		}
+            }
 
-        return array(
-            'site_info' => self::get_site_info(),
-            'plugins'   => $plugins_state,
-            'themes'    => $themes_state
-        );
+            $wp_themes = wp_get_themes();
+            $current_theme = wp_get_theme();
+            $theme_update_data = get_site_transient('update_themes')->response ?? [];
+
+            foreach ($wp_themes as $theme) {
+                $stylesheet = $theme->get_stylesheet();
+                $update_version = array_key_exists($stylesheet, $theme_update_data) ? $theme_update_data[$stylesheet]['new_version'] : '';
+                $active = $stylesheet === $current_theme->get_stylesheet() ? "1" : "0";
+                $state = new ProductState($stylesheet, $stylesheet, $theme['Name'], "", 'theme', $theme->get('Version'), $update_version, 1, $active);
+                $themes_state[] = $state->get_wp_info();
+            }
+
+            // Clear any output and restore error reporting before returning
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            error_reporting($error_reporting);
+
+            return array(
+                'site_info' => self::get_site_info(),
+                'plugins' => $plugins_state,
+                'themes' => $themes_state
+            );
+        } catch (Exception $e) {
+            // Clear any output and restore error reporting
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            error_reporting($error_reporting);
+
+            error_log('Error in get_site_full_state: ' . $e->getMessage());
+
+            return array(
+                'site_info' => self::get_site_info(),
+                'plugins' => [],
+                'themes' => [],
+                'error' => 'An error occurred while fetching site state'
+            );
+        }
     }
 
     private static function get_theme_screenshot_url($slug)
@@ -86,99 +121,132 @@ class SiteState
 
     public static function get_site_info($blog_id = null, $reset = false)
     {
-        if (self::$site_state != null && $reset === false && is_null($blog_id)) {
-            return self::$site_state;
+        // Set error reporting to suppress notices and warnings
+        $error_reporting = error_reporting();
+        error_reporting(E_ERROR | E_PARSE);
+
+        // Start output buffering at the highest level
+        while (ob_get_level()) {
+            ob_end_clean();
         }
+        ob_start();
 
-        global $wp_version, $wpdb;
-
-        if ((is_multisite() && is_null($blog_id)) || (is_multisite() && $blog_id == 'multisite')) {
-            $home_url = network_admin_url(); // or site_url
-            $admin_url = network_admin_url();
-            $site_title = get_site_option('site_name');
-        } else {
-            $home_url = get_home_url($blog_id);
-            $admin_url = get_admin_url($blog_id);
-            $site_title = get_bloginfo('name');
-        }
-
-        $sql_version = $wpdb->get_var("SELECT VERSION() AS version");
-
-        if (is_multisite() && $blog_id && $blog_id != 'multisite') {
-            $time_zone = get_blog_option($blog_id, 'timezone_string');
-        } else {
-            $time_zone = get_option('timezone_string');
-        }
-
-        if (empty($time_zone)) {
-            $time_zone = date_default_timezone_get();
-            if (!$time_zone || empty($time_zone)) {
-                $time_zone = "America/Los_Angeles";
+        try {
+            if (self::$site_state != null && $reset === false && is_null($blog_id)) {
+                ob_end_clean();
+                return self::$site_state;
             }
-        }
-       
-        function get_latest_wp_core_update_info() {
-            $updates = get_site_transient( 'update_core' );
-            // Check if there are any updates available
-            if (!empty($updates->updates) && is_array($updates->updates)) {
-                foreach ($updates->updates as $update) {
-                    // Check for the latest version that is not the current version
-                    if ($update->response == 'upgrade' && version_compare($update->current, get_bloginfo('version'), '>')) {
-                        // Return the update information
-                        return  $update->current;
-                    }
+
+            global $wp_version, $wpdb;
+
+            if ((is_multisite() && is_null($blog_id)) || (is_multisite() && $blog_id == 'multisite')) {
+                $home_url = network_admin_url(); // or site_url
+                $admin_url = network_admin_url();
+                $site_title = get_site_option('site_name');
+            } else {
+                $home_url = get_home_url($blog_id);
+                $admin_url = get_admin_url($blog_id);
+                $site_title = get_bloginfo('name');
+            }
+
+            $sql_version = $wpdb->get_var("SELECT VERSION() AS version");
+
+            if (is_multisite() && $blog_id && $blog_id != 'multisite') {
+                $time_zone = get_blog_option($blog_id, 'timezone_string');
+            } else {
+                $time_zone = get_option('timezone_string');
+            }
+
+            if (empty($time_zone)) {
+                $time_zone = date_default_timezone_get();
+                if (!$time_zone || empty($time_zone)) {
+                    $time_zone = "America/Los_Angeles";
                 }
             }
-            return "";
-        }
 
-
-        $server_software = isset($_SERVER['SERVER_SOFTWARE']) && trim($_SERVER['SERVER_SOFTWARE']) !== '' ? $_SERVER['SERVER_SOFTWARE'] : 'unknown';
-        $debug_mode = self::isDebugModeActive();
-        $indexable = self::isIndexable();
-        $autoload_size = self::getAutoloadSize();
-
-        $site_info = array(
-            'platform'            => 'wordpress',
-            'site_url'            => $home_url,
-            'admin_url'           => $admin_url,
-            'name'                => $home_url,
-            'site_title'          => $site_title,
-            'site_screenshot_url' => $home_url,
-            'platform_version'    => $wp_version,
-            'platform_update'     => get_latest_wp_core_update_info(),
-            'php_version'         => PHP_VERSION,
-            'mysql_version'       => $sql_version,
-            'timezone'            => $time_zone, //todo check on multisite
-            'server_type'         => $server_software,
-            'server_version'      => $server_software,
-            'other_data'          => array(
-                'file_system'     => array(
-                    'method' => self::get_fs_method(),
-                    'config' => self::check_fs_configs() ? 1 : 0
-                ),
-                "is_network"      => ((is_multisite()) ? 1 : 0),
-                "blog_id"         => $blog_id
-            ),
-            "is_network"          => ((is_multisite()) ? 1 : 0),
-            "debug_mode"     => $debug_mode,
-            "indexable"     => $indexable,
-            "autoload_size" => $autoload_size
-        );
-
-        if (is_multisite() && is_numeric($blog_id)) {
-            $blog_details = get_blog_details($blog_id);
-            if (!empty($blog_details)) {
-                $site_info['other_data']['multisite_data'] = array(
-                    'registered'   => $blog_details->registered,
-                    'last_updated' => $blog_details->last_updated,
-                );
+            function get_latest_wp_core_update_info()
+            {
+                $updates = get_site_transient('update_core');
+                // Check if there are any updates available
+                if (!empty($updates->updates) && is_array($updates->updates)) {
+                    foreach ($updates->updates as $update) {
+                        // Check for the latest version that is not the current version
+                        if ($update->response == 'upgrade' && version_compare($update->current, get_bloginfo('version'), '>')) {
+                            // Return the update information
+                            return  $update->current;
+                        }
+                    }
+                }
+                return "";
             }
+
+
+            $server_software = isset($_SERVER['SERVER_SOFTWARE']) && trim($_SERVER['SERVER_SOFTWARE']) !== '' ? $_SERVER['SERVER_SOFTWARE'] : 'unknown';
+            $debug_mode = self::isDebugModeActive();
+            $indexable = self::isIndexable();
+            $autoload_size = self::getAutoloadSize();
+
+            $site_info = array(
+                'platform'            => 'wordpress',
+                'site_url'            => $home_url,
+                'admin_url'           => $admin_url,
+                'name'                => $home_url,
+                'site_title'          => $site_title,
+                'site_screenshot_url' => $home_url,
+                'platform_version'    => $wp_version,
+                'platform_update'     => get_latest_wp_core_update_info(),
+                'php_version'         => PHP_VERSION,
+                'mysql_version'       => $sql_version,
+                'timezone'            => $time_zone, //todo check on multisite
+                'server_type'         => $server_software,
+                'server_version'      => $server_software,
+                'other_data'          => array(
+                    'file_system'     => array(
+                        'method' => self::get_fs_method(),
+                        'config' => self::check_fs_configs() ? 1 : 0
+                    ),
+                    "is_network"      => ((is_multisite()) ? 1 : 0),
+                    "blog_id"         => $blog_id
+                ),
+                "is_network"          => ((is_multisite()) ? 1 : 0),
+                "debug_mode"     => $debug_mode,
+                "indexable"     => $indexable,
+                "autoload_size" => $autoload_size
+            );
+
+            if (is_multisite() && is_numeric($blog_id)) {
+                $blog_details = get_blog_details($blog_id);
+                if (!empty($blog_details)) {
+                    $site_info['other_data']['multisite_data'] = array(
+                        'registered'   => $blog_details->registered,
+                        'last_updated' => $blog_details->last_updated,
+                    );
+                }
+            }
+
+            self::$site_state = $site_info;
+
+            // Clear any output and restore error reporting before returning
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            error_reporting($error_reporting);
+
+            return self::$site_state;
+        } catch (Exception $e) {
+            // Clear any output and restore error reporting
+            while (ob_get_level()) {
+                ob_end_clean();
+            }
+            error_reporting($error_reporting);
+
+            error_log('Error in get_site_info: ' . $e->getMessage());
+
+            return array(
+                'platform' => 'wordpress',
+                'error' => 'An error occurred while fetching site information'
+            );
         }
-
-        self::$site_state = $site_info;
-
-        return self::$site_state;
     }
 
     /**

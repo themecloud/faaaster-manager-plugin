@@ -753,6 +753,7 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
         }
     }
 
+    // Append cache busting query string to script and style src
     function append_cache_bust_query_string($src)
     {
         // Retrieve the cache busting timestamp from WP options
@@ -765,6 +766,19 @@ if ($app_id && $wp_api_key && $branch && $cfcache_enabled == "true") {
     add_filter('script_loader_src', 'append_cache_bust_query_string', 10, 1);
     add_filter('style_loader_src', 'append_cache_bust_query_string', 10, 1);
 
+    // Append cache busting query string to images
+    function add_cache_bust_query_string_to_images($url, $post_id)
+    {
+        // Retrieve the cache busting timestamp from WP options
+        $cache_bust = get_option('faaaster_bust_timestamp', time());
+        $query_param = 'fstrcache=' . $cache_bust;
+        $url = add_query_arg($query_param, '', $url);
+
+        return $url;
+    }
+    add_filter('wp_get_attachment_url', 'add_cache_bust_query_string_to_images', 10, 2);
+
+    // Clear Cloudflare cache on FastCGI cache purge
     add_action('rt_nginx_helper_after_fastcgi_purge_all', 'faaaster_cf_purge_all', PHP_INT_MAX);
     add_action('rt_nginx_helper_fastcgi_purge_url', 'faaaster_cf_purge_urls', PHP_INT_MAX, 1);
 }
@@ -782,6 +796,10 @@ if ($app_id && $wp_api_key && $branch) {
         $type = $options['type'];
 
         if ($action === "update") {
+
+            // Clear static cache
+            $timestamp = time();
+            update_option('faaaster_bust_timestamp', $timestamp);
 
             // Get the user information
             $user = function_exists('wp_get_current_user') ? wp_get_current_user() : "";
@@ -868,6 +886,10 @@ if ($app_id && $wp_api_key && $branch) {
     // Manage core updates
     function faaaster_on_wp_core_update($wp_version)
     {
+        // Clear static cache
+        $timestamp = time();
+        update_option('faaaster_bust_timestamp', $timestamp);
+
         // Retrieve the old version
         $old_version = get_option('wp_pre_update_version');
 
