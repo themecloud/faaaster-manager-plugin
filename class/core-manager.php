@@ -1,6 +1,26 @@
 <?php
 class CoreUpgrade
 {
+    public function reinstall_core($request)
+    {
+        exec('wp core download --skip-content --force --skip-plugins --skip-themes', $output, $return_var);
+        if ($return_var !== 0) {
+            // Handle error
+            echo "Error executing command: " . implode("\n", $output);
+            $data = array(
+                "code" => "ko",
+                "error" => json_encode($output),
+            );
+            return new WP_REST_Response($data, 200);
+        } else {
+            // Command executed successfully
+            echo "Command executed successfully: " . implode("\n", $output);
+            $data = array(
+                "code" => "ok",
+            );
+            return new WP_REST_Response($data, 200);
+        }
+    }
     public function core_update(array $args = []): array
     {
         $new_args = wp_parse_args($args, [
