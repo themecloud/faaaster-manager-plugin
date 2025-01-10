@@ -125,7 +125,7 @@ class LoginSSO
                     // redirect to choose a user
                     header('Cache-Control: no-cache');
                     header('Content-Type: text/html');
-                    include("request/user.php");
+                    include(__DIR__ . '/../request/user.php');
                     exit;
                 } else if (!isset($_GET["user"])) {
                     $user_data = get_userdata($admin_users[0]->ID);
@@ -156,9 +156,9 @@ class LoginSSO
         wp_set_current_user($user_data->ID, $user_data->user_login);
         wp_set_auth_cookie($user_data->ID);
         do_action('wp_login', $user_data->user_login, $user_data);
-        if(isset($_SERVER['HTTP_REFERER'])){
+        if (isset($_SERVER['HTTP_REFERER'])) {
             $parsed = parse_url($_SERVER['HTTP_REFERER'], PHP_URL_QUERY);
-        }else{
+        } else {
             $parsed = false;
         }
 

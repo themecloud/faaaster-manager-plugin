@@ -20,6 +20,43 @@ class HostManagerQuietSkin extends \WP_Upgrader_Skin
 class PluginUpgrade
 {
 
+    // List plugins
+    public function faaaster_plugin_list($request)
+    {
+        if (!function_exists('get_plugins')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+
+        $all_plugins = get_plugins();
+
+        $data = array(
+            "code" => "ok",
+            "data" =>  array("json" => json_encode($all_plugins))
+        );
+
+        return new WP_REST_Response($data, 200);
+    }
+    // Reinstall plugins from wp.org
+    public function reinstall_plugins()
+    {
+        exec('wp plugin --force --skip-plugins --skip-themes install $(wp plugin list --force --skip-plugins --skip-themes --field=name | grep -v "nginx-helper") --force', $output, $return_var);
+        if ($return_var !== 0) {
+            // Handle error
+            echo "Error executing command: " . implode("\n", $output);
+            $data = array(
+                "code" => "ko",
+                "error" => json_encode($output),
+            );
+            return new WP_REST_Response($data, 200);
+        } else {
+            // Command executed successfully
+            echo "Command executed successfully: " . implode("\n", $output);
+            $data = array(
+                "code" => "ok",
+            );
+            return new WP_REST_Response($data, 200);
+        }
+    }
     public function plugin_upgrade($request)
     {
 

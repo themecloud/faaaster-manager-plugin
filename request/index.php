@@ -1,6 +1,6 @@
 <?php
 
-require_once(__DIR__ . '/../loginSSO.php');
+require_once(__DIR__ . '/../class/loginSSO.php');
 
 
 function hostmanager_response($data)
@@ -42,12 +42,12 @@ function hostmanager_get_headers()
         $all_headers = $function();
     } else {
         foreach ($_SERVER as $name => $value) {
-            if (substr($name, 0, 5)=='HTTP_') {
-                $name=substr($name, 5);
-                $name=str_replace('_', ' ', $name);
-                $name=strtolower($name);
-                $name=ucwords($name);
-                $name=str_replace(' ', '-', $name);
+            if (substr($name, 0, 5) == 'HTTP_') {
+                $name = substr($name, 5);
+                $name = str_replace('_', ' ', $name);
+                $name = strtolower($name);
+                $name = ucwords($name);
+                $name = str_replace(' ', '-', $name);
 
                 $all_headers[$name] = $value;
             } elseif ($function === 'apache_request_headers') {
