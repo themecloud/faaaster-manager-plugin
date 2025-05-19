@@ -474,6 +474,12 @@ function faaaster_remove_wordpress_version()
 }
 add_filter('the_generator', 'faaaster_remove_wordpress_version');
 
+// Add custom header for logged in admins
+add_action('send_headers', function () {
+    if (is_user_logged_in() && current_user_can('manage_options')) {
+        header('X-WP-Admin: true');
+    }
+});
 
 // Pick out the version number from scripts and styles
 function faaaster_remove_version_from_style_js($src)
