@@ -25,9 +25,6 @@ class FaaasterCloudflare
         if ($this->app_id && $this->wp_api_key && $this->branch && $this->cfcache_enabled == "true") {
             add_action('rt_nginx_helper_after_fastcgi_purge_all', [$this, 'purgeAll'], PHP_INT_MAX);
             add_action('rt_nginx_helper_fastcgi_purge_url', [$this, 'purgeUrls'], PHP_INT_MAX, 1);
-            add_filter('script_loader_src', [$this, 'appendCacheBustQueryString'], 10, 1);
-            add_filter('style_loader_src', [$this, 'appendCacheBustQueryString'], 10, 1);
-            add_filter('wp_get_attachment_url', [$this, 'add_cache_bust_query_string_to_images'], 10, 2);
         }
     }
 
@@ -36,9 +33,6 @@ class FaaasterCloudflare
      */
     public function purgeAll()
     {
-        // Store timestamp
-        $timestamp = time();
-        update_option('faaaster_bust_timestamp', $timestamp);
 
         $url = $this->api_base . "/api/applications/" . $this->app_id . "/instances/" . $this->branch . "/cloudflare";
         $data = [
@@ -104,27 +98,5 @@ class FaaasterCloudflare
                 error_log("Cloudflare purge URLs failed with response code $response_code. Response: " . $response_body);
             }
         }
-    }
-
-    /**
-     * Append cache busting query string to assets
-     */
-    public function appendCacheBustQueryString($src)
-    {
-        // Retrieve the cache busting timestamp from WP options
-        $cache_bust = get_option('faaaster_bust_timestamp', time());
-        // Append the cache busting query parameter to the URL
-        return add_query_arg('fstrcache', $cache_bust, $src);
-    }
-
-    // Append cache busting query string to images
-    public function add_cache_bust_query_string_to_images($url, $post_id)
-    {
-        // Retrieve the cache busting timestamp from WP options
-        $cache_bust = get_option('faaaster_bust_timestamp', time());
-        $query_param = 'fstrcache=' . $cache_bust;
-        $url = add_query_arg($query_param, '', $url);
-
-        return $url;
     }
 }
