@@ -490,3 +490,10 @@ function faaaster_remove_version_from_style_js($src)
 }
 add_filter('style_loader_src', 'faaaster_remove_version_from_style_js');
 add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
+
+// WP encode emojis
+function faaaster_convert_emojis_to_html($content)
+{
+    return wp_encode_emoji($content);
+}
+add_filter('content_save_pre', 'faaaster_convert_emojis_to_html');
