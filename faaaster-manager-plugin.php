@@ -492,8 +492,8 @@ add_filter('style_loader_src', 'faaaster_remove_version_from_style_js');
 add_filter('script_loader_src', 'faaaster_remove_version_from_style_js');
 
 // WP encode emojis
-function em_convert_emojis_to_html($content)
+function faaaster_convert_emojis_to_html($content)
 {
     return wp_encode_emoji($content);
 }
-add_filter('content_save_pre', 'em_convert_emojis_to_html');
+add_filter('content_save_pre', 'faaaster_convert_emojis_to_html');
