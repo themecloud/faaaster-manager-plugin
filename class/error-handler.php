@@ -6,6 +6,14 @@ class FaaasterErrorHandler
     private $branch;
     private $wp_api_key;
 
+    // Maximum errors to send per hour
+    private const MAX_ERRORS_PER_HOUR = 10;
+
+    // Paths to ignore (errors from these paths won't be reported)
+    private const IGNORED_PATHS = [
+        'faaaster-manager-plugin',
+    ];
+
     public function __construct($app_id, $branch, $wp_api_key)
     {
         $this->app_id = $app_id;
@@ -21,6 +29,10 @@ class FaaasterErrorHandler
 
     public function handler($code, $message, $file, $line, $ctx = [])
     {
+        // Skip errors from ignored paths (like the manager plugin itself)
+        if ($this->shouldIgnoreFile($file)) {
+            return false;
+        }
 
         switch ($code) {
             case E_ERROR:
@@ -57,6 +69,11 @@ class FaaasterErrorHandler
             return;
         }
 
+        // Check rate limit before sending
+        if ($this->isRateLimited()) {
+            return;
+        }
+
         $this->saveError($params);
     }
 
@@ -73,6 +90,55 @@ class FaaasterErrorHandler
         }
     }
 
+    /**
+     * Check if the file path should be ignored
+     */
+    private function shouldIgnoreFile($file)
+    {
+        foreach (self::IGNORED_PATHS as $ignoredPath) {
+            if (strpos($file, $ignoredPath) !== false) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Check if we've exceeded the rate limit
+     */
+    private function isRateLimited()
+    {
+        $count = get_transient('faaaster_error_count') ?: 0;
+
+        if ($count >= self::MAX_ERRORS_PER_HOUR) {
+            return true;
+        }
+
+        set_transient('faaaster_error_count', $count + 1, HOUR_IN_SECONDS);
+        return false;
+    }
+
+    /**
+     * Normalize error message for better deduplication
+     * Removes dynamic parts like IDs, timestamps, memory addresses
+     */
+    private function normalizeMessage($message)
+    {
+        // Remove memory addresses (e.g., Object(0x7f...))
+        $message = preg_replace('/0x[0-9a-fA-F]+/', '0x...', $message);
+
+        // Remove numeric IDs that might change
+        $message = preg_replace('/\b\d{5,}\b/', 'ID', $message);
+
+        // Remove timestamps in various formats
+        $message = preg_replace('/\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2}/', 'TIMESTAMP', $message);
+
+        // Remove UUIDs
+        $message = preg_replace('/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i', 'UUID', $message);
+
+        return $message;
+    }
+
     private function errorAlreadyExist($params)
     {
         $transient = get_transient('faaaster_errors_sent');
@@ -85,6 +151,11 @@ class FaaasterErrorHandler
 
         if (in_array($md5, $transient)) {
             return true;
+        }
+
+        // Limit the array size to prevent memory issues
+        if (count($transient) > 100) {
+            $transient = array_slice($transient, -50);
         }
 
         $transient[] = $md5;
@@ -132,11 +203,14 @@ class FaaasterErrorHandler
 
     private function serializeError($params)
     {
+        // Use normalized message for better deduplication of similar errors
+        $normalizedMessage = $this->normalizeMessage($params['message']);
+
         return md5(vsprintf('%s-%s-%s-%s', [
             $params['file'],
             $params['line'],
             $params['code'],
-            $params['message']
+            $normalizedMessage
         ]));
     }
 }

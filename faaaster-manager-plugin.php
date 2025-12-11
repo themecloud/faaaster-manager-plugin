@@ -382,7 +382,7 @@ function faaaster_at_rest_init()
 
     register_rest_route($namespace, '/update_core', array(
         'methods' => WP_REST_Server::CREATABLE,
-        'callback' => [$coreUpgrader, 'core_update'],
+        'callback' => 'faaaster_update_core',
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
