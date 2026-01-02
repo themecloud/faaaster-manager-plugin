@@ -4,21 +4,21 @@ class ProductState
 {
 
 
-    public $product_id;//@type int
-    public $slug;//@type string
-    public $title;//@type string
-    public $description;//@type string
-    public $type;//@type string ['plugin', 'theme','addon']
-    public $version;//@type string
+    public $product_id; //@type int
+    public $slug; //@type string
+    public $title; //@type string
+    public $description; //@type string
+    public $type; //@type string ['plugin', 'theme','addon']
+    public $version; //@type string
     public $update; //@type string
-    public $installed;//@type int [0,1]
-    public $active;//@type int [0,1]
-    public $network_active;//@type int [0,1]
-    public $is_paid;//@type int [0,1]
-    public $screenshot = "";//@type string
-    public $author = "";//@type string
-    public $repo_version;//@type string
-    public $parent_theme_name = "";//@type string
+    public $installed; //@type int [0,1]
+    public $active; //@type int [0,1]
+    public $network_active; //@type int [0,1]
+    public $is_paid; //@type int [0,1]
+    public $screenshot = ""; //@type string
+    public $author = ""; //@type string
+    public $repo_version; //@type string
+    public $parent_theme_name = ""; //@type string
     public $theme_errors = array();//@type array
 
     /**
@@ -53,10 +53,10 @@ class ProductState
     public function set_active($wp_slug)
     {
         if ($this->type == "theme") {
-
-            $current_theme = wp_get_theme();
-            $this->active = ($current_theme['Name'] == $this->title);
-
+            // Use stored stylesheet from global (read from DB before filtering) to correctly identify active theme
+            global $current_stylesheet;
+            $active_stylesheet = $current_stylesheet ?: get_option('stylesheet');
+            $this->active = ($wp_slug === $active_stylesheet);
         } else if ($this->type == "plugin") {
             $this->active = is_plugin_active($wp_slug);
 
@@ -65,7 +65,6 @@ class ProductState
             }
             $this->active = is_plugin_active($wp_slug);
         }
-
     }
 
     public function set_is_paid($versions)
@@ -86,7 +85,6 @@ class ProductState
         } else {
             $this->is_paid = null;
         }
-
     }
 
     public function set_other_wp_info($wp_slug, $installed_product, $installed_products_wp_info)
@@ -112,12 +110,11 @@ class ProductState
             } else {
                 $this->theme_errors = $errors->errors;
             }
-
         } else {
 
             if (!empty($installed_products_wp_info->response[$wp_slug])) {
                 $this->repo_version = $installed_products_wp_info->response[$wp_slug]->new_version;
-            } else if (!empty($installed_products_wp_info->no_update[$wp_slug]->new_version)) {//only for plugins
+            } else if (!empty($installed_products_wp_info->no_update[$wp_slug]->new_version)) { //only for plugins
                 $this->repo_version = $installed_products_wp_info->no_update[$wp_slug]->new_version;
             }
 
@@ -127,7 +124,6 @@ class ProductState
         if (empty($this->repo_version)) {
             $this->repo_version = $this->version;
         }
-
     }
 
     public function set_screenshot($url)
@@ -156,7 +152,6 @@ class ProductState
             $state['parent_theme_name'] = $this->parent_theme_name;
             $state['theme_errors'] = $this->theme_errors;
         } else {
-
         }
 
         return $state;
@@ -172,5 +167,4 @@ class ProductState
             'update'  => $this->update
         );
     }
-
 }

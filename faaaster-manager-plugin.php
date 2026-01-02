@@ -17,6 +17,7 @@ require_once('/app/.include/manager.php');
 global $active_plugins;
 global $cfcache_enabled;
 global $private;
+global $current_stylesheet;
 
 $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
@@ -25,6 +26,8 @@ $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 $active_plugins = (array) get_option('active_plugins', []);
+$current_stylesheet = get_option('stylesheet'); // Store before filtering to get correct active theme
+
 $faaaster_api_base = defined('CUSTOM_FAAASTER_API_BASE') ? CUSTOM_FAAASTER_API_BASE : 'https://app.faaaster.io';
 define('FAAASTER_API_BASE', $faaaster_api_base);
 
@@ -40,16 +43,24 @@ if (defined('APP_ID') && defined('BRANCH') && defined('WP_API_KEY')) {
 
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     require_once ABSPATH . 'wp-load.php';
+
+    // Skip most plugins for hostmanager requests
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
     {
         foreach ($plugins as $i => $plugin) {
-            if ($plugin != "simply-static/simply-static.php" && $plugin != "advanced-custom-fields/acf.php" && $plugin != "advanced-custom-fields-pro/acf.php") {
+            if ($plugin != "simply-static/simply-static.php") {
                 unset($plugins[$i]);
             }
         }
         return $plugins;
     }
+
+    // Skip theme loading to prevent theme-related fatal errors
+    // Theme info is still available via filesystem scanning (wp_get_themes)
+    // and active theme is determined from $current_stylesheet global
+    add_filter('stylesheet', '__return_empty_string');
+    add_filter('template', '__return_empty_string');
 }
 
 function faaaster_disable_filters_for_manager_plugin($response)
@@ -480,6 +491,20 @@ add_action('send_headers', function () {
         header('X-WP-Admin: true');
     }
 });
+
+// Add custom header to WordPress cron requests
+function faaaster_add_cron_headers($args, $url)
+{
+    // Check if this is a cron request to wp-cron.php
+    if (strpos($url, 'wp-cron.php') !== false) {
+        if (!isset($args['headers'])) {
+            $args['headers'] = array();
+        }
+        $args['headers']['x_wp_admin'] = 'true';
+    }
+    return $args;
+}
+add_filter('http_request_args', 'faaaster_add_cron_headers', 10, 2);
 
 // Pick out the version number from scripts and styles
 function faaaster_remove_version_from_style_js($src)

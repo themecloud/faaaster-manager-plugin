@@ -49,12 +49,14 @@ class SiteState
             }
 
             $wp_themes         = wp_get_themes();
-            $current_theme     = wp_get_theme();
+            // Use stored stylesheet from global (read from DB before filtering) to correctly identify active theme
+            global $current_stylesheet;
+            $active_stylesheet = $current_stylesheet ?: get_option('stylesheet');
             $theme_update_data = get_site_transient('update_themes')->response ?? [];
             foreach ($wp_themes as $theme) {
                 $stylesheet = $theme->get_stylesheet();
                 $update_version = array_key_exists($stylesheet, $theme_update_data) ? $theme_update_data[$stylesheet]['new_version'] : '';
-                $active = $stylesheet === $current_theme->get_stylesheet() ? "1" : "0";
+                $active = $stylesheet === $active_stylesheet ? "1" : "0";
                 $state = new ProductState($stylesheet, $stylesheet, $theme['Name'], "", 'theme', $theme->get('Version'), $update_version, 1, $active);
                 // $state->set_active($slug);
                 // $state->set_screenshot(self::get_theme_screenshot_url($slug));
