@@ -154,23 +154,6 @@ class SiteState
                 }
             }
 
-            function get_latest_wp_core_update_info()
-            {
-                $updates = get_site_transient('update_core');
-                // Check if there are any updates available
-                if (!empty($updates->updates) && is_array($updates->updates)) {
-                    foreach ($updates->updates as $update) {
-                        // Check for the latest version that is not the current version
-                        if ($update->response == 'upgrade' && version_compare($update->current, get_bloginfo('version'), '>')) {
-                            // Return the update information
-                            return  $update->current;
-                        }
-                    }
-                }
-                return "";
-            }
-
-
             $server_software = isset($_SERVER['SERVER_SOFTWARE']) && trim($_SERVER['SERVER_SOFTWARE']) !== '' ? $_SERVER['SERVER_SOFTWARE'] : 'unknown';
             $debug_mode = self::isDebugModeActive();
             $indexable = self::isIndexable();
@@ -184,7 +167,7 @@ class SiteState
                 'site_title'          => $site_title,
                 'site_screenshot_url' => $home_url,
                 'platform_version'    => $wp_version,
-                'platform_update'     => get_latest_wp_core_update_info(),
+                'platform_update'     => self::get_latest_wp_core_update_info(),
                 'php_version'         => PHP_VERSION,
                 'mysql_version'       => $sql_version,
                 'timezone'            => $time_zone, //todo check on multisite
@@ -309,5 +292,21 @@ class SiteState
 
         $autoload_size = $wpdb->get_results($query);
         return $autoload_size[0]->alsize;
+    }
+
+    private static function get_latest_wp_core_update_info()
+    {
+        $updates = get_site_transient('update_core');
+        // Check if there are any updates available
+        if (!empty($updates->updates) && is_array($updates->updates)) {
+            foreach ($updates->updates as $update) {
+                // Check for the latest version that is not the current version
+                if ($update->response == 'upgrade' && version_compare($update->current, get_bloginfo('version'), '>')) {
+                    // Return the update information
+                    return $update->current;
+                }
+            }
+        }
+        return "";
     }
 }
