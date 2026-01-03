@@ -244,7 +244,7 @@ class PluginUpgrade
             $status = $param['status'];
 
             if ($status == "activate") {
-                exec('wp plugin activate --skip-plugins ' . $plugin, $output, $return_var);
+                exec('wp plugin activate --skip-plugins ' . escapeshellarg($plugin), $output, $return_var);
                 if ($return_var == 0) {
                     $data_for_response = array(
                         "code"    => "success",
@@ -261,7 +261,7 @@ class PluginUpgrade
                     return new WP_REST_Response($data_for_response, 500);
                 }
             } else if ($status == "disable") {
-                exec('wp plugin deactivate --skip-plugins ' . $plugin, $output, $return_var);
+                exec('wp plugin deactivate --skip-plugins ' . escapeshellarg($plugin), $output, $return_var);
                 if ($return_var == 0) {
                     $data_for_response = array(
                         "code"    => "success",
@@ -412,8 +412,6 @@ class PluginUpgrade
                 . var_export($error->get_error_message(), true)
                 . "\n";
         }
-
-        return true;
 
         return true;
     }

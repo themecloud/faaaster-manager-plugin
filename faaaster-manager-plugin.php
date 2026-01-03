@@ -25,8 +25,6 @@ $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
 $cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
-$active_plugins = (array) get_option('active_plugins', []);
-$current_stylesheet = get_option('stylesheet'); // Store before filtering to get correct active theme
 
 $faaaster_api_base = defined('CUSTOM_FAAASTER_API_BASE') ? CUSTOM_FAAASTER_API_BASE : 'https://app.faaaster.io';
 define('FAAASTER_API_BASE', $faaaster_api_base);
@@ -44,16 +42,17 @@ if (defined('APP_ID') && defined('BRANCH') && defined('WP_API_KEY')) {
 if (strpos($_SERVER['REQUEST_URI'], 'hostmanager') !== false) {
     require_once ABSPATH . 'wp-load.php';
 
-    // Skip most plugins for hostmanager requests
+    // Store real values before filtering (only needed for site_state endpoint)
+    if (strpos($_SERVER['REQUEST_URI'], 'site_state') !== false) {
+        $active_plugins = (array) get_option('active_plugins', []);
+        $current_stylesheet = get_option('stylesheet');
+    }
+
+    // Skip all plugins for hostmanager requests to prevent fatal errors
     add_filter('option_active_plugins', 'skipplugins_plugins_filter');
     function skipplugins_plugins_filter($plugins)
     {
-        foreach ($plugins as $i => $plugin) {
-            if ($plugin != "simply-static/simply-static.php") {
-                unset($plugins[$i]);
-            }
-        }
-        return $plugins;
+        return [];
     }
 
     // Skip theme loading to prevent theme-related fatal errors
