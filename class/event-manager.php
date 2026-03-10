@@ -51,18 +51,26 @@ class FaaasterEventManager
                 if (isset($options['bulk']) && $options['bulk'] == "true") {
                     foreach ($options['plugins'] as $each_plugin) {
                         $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $each_plugin);
-                        $old_version = $upgrader_object->skin->plugin_info['Version'];
+                        $old_version = isset($upgrader_object->skin->plugin_info['Version'])
+                            ? $upgrader_object->skin->plugin_info['Version']
+                            : null;
                         $name = $plugin["Name"];
                         $new_version = $plugin["Version"];
-                        $plugin = $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"];
+                        $plugin = $old_version
+                            ? $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"]
+                            : $plugin["Name"] . " - " . $plugin["Version"];
                         $components[] = $plugin;
                     }
                 } else {
                     $plugin = get_plugin_data(WP_CONTENT_DIR . "/plugins/" . $options['plugin']);
-                    $old_version = $upgrader_object->skin->plugin_info['Version'];
+                    $old_version = isset($upgrader_object->skin->plugin_info['Version'])
+                        ? $upgrader_object->skin->plugin_info['Version']
+                        : null;
                     $name = $plugin["Name"];
                     $new_version = $plugin["Version"];
-                    $plugin = $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"];
+                    $plugin = $old_version
+                        ? $plugin["Name"] . " - " . $old_version . " >> " . $plugin["Version"]
+                        : $plugin["Name"] . " - " . $plugin["Version"];
                     $components[] = $plugin;
                 }
             } elseif ($type === 'theme') {

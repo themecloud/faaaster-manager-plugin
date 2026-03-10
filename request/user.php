@@ -79,7 +79,7 @@
 </style>
 
 <body>
-    <?php session_start();
+    <?php if (session_status() === PHP_SESSION_NONE) { session_start(); }
     if (count($_SESSION["admins"]) > 0) : ?>
             <div class="user-container">
                 <?php if ($_SESSION["lang"] == "fr_FR") : ?>
