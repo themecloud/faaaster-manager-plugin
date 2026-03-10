@@ -459,9 +459,57 @@ function faaaster_at_rest_init()
         'args' => array(),
         'permission_callback' => '__return_true',
     ));
+
+    register_rest_route($namespace, '/resources', array(
+        'methods'   => WP_REST_Server::READABLE,
+        'callback'  => 'faaaster_get_resources',
+        'args' => array(),
+        'permission_callback' => '__return_true',
+    ));
 }
 
 add_action('rest_api_init', 'faaaster_at_rest_init');
+
+/**
+ * GET /wp-json/hostmanager/v1/resources
+ * Returns system resource usage vs limits (OPcache, APCu, FPM, Pod memory, disk, etc.)
+ * Requires: Authorization: Bearer <WP_API_KEY>
+ */
+function faaaster_get_resources($request)
+{
+    $expected_key = defined('WP_API_KEY') ? WP_API_KEY : false;
+    if (!$expected_key) {
+        return new WP_REST_Response(['code' => 'config_error', 'message' => 'WP_API_KEY not configured'], 500);
+    }
+
+    $auth_header = $request->get_header('Authorization');
+    $token = null;
+    if ($auth_header && preg_match('/^Bearer\s+(.+)$/i', $auth_header, $m)) {
+        $token = trim($m[1]);
+    }
+
+    if (!$token || !hash_equals($expected_key, $token)) {
+        return new WP_REST_Response(['code' => 'unauthorized', 'message' => 'Invalid or missing Bearer token'], 403);
+    }
+
+    try {
+        $metrics_lib = '/app/www/php/_tc/lib/resource-metrics.php';
+        if (!file_exists($metrics_lib)) {
+            return new WP_REST_Response(['code' => 'not_available', 'message' => 'Resource metrics library not found'], 500);
+        }
+
+        require_once $metrics_lib;
+
+        $data = get_resource_metrics();
+
+        return new WP_REST_Response(['code' => 'ok', 'data' => $data], 200);
+    } catch (\Throwable $e) {
+        return new WP_REST_Response([
+            'code'    => 'error',
+            'message' => 'Resource metrics collection failed',
+        ], 500);
+    }
+}
 
 // Hide WordPress errors
 if (defined('HIDE_WP_ERRORS') == false) {

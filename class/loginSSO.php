@@ -49,7 +49,9 @@ class LoginSSO
     public function login($token)
     {
 
-        session_start();
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
 
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
@@ -62,7 +64,9 @@ class LoginSSO
 
         $result = curl_exec($conn);
 
-        curl_close($conn);
+        if (PHP_VERSION_ID < 80000) {
+            curl_close($conn);
+        }
 
         $_SESSION["lang"] = get_locale();
 
@@ -95,7 +99,7 @@ class LoginSSO
 
     private function getUser($username)
     {
-        if (!isset($_SESSION)) {
+        if (session_status() === PHP_SESSION_NONE) {
             session_start();
         }
 
@@ -189,7 +193,9 @@ class LoginSSO
 
         $result = curl_exec($conn);
 
-        curl_close($conn);
+        if (PHP_VERSION_ID < 80000) {
+            curl_close($conn);
+        }
 
         if ($result === false) {
             return false;
