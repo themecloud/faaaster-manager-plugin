@@ -54,22 +54,19 @@ class FaaasterCloudflare
         $this->purgedAll = true;
         $this->urlsToPurge = [];
 
-        error_log("[FaaasterCloudflare] purgeAll -> POST " . $this->getEndpointUrl() . " scope=everything");
-
         $response = wp_remote_post($this->getEndpointUrl(), [
             'body' => json_encode(['scope' => 'everything']),
             'headers' => $this->getAuthHeaders(),
         ]);
 
-        if (is_wp_error($response)) {
-            error_log("[FaaasterCloudflare] purgeAll error: " . $response->get_error_message());
-        } else {
-            $response_code = wp_remote_retrieve_response_code($response);
-            error_log("[FaaasterCloudflare] purgeAll response: " . $response_code);
-            if ($response_code !== 200) {
-                error_log("[FaaasterCloudflare] purgeAll body: " . wp_remote_retrieve_body($response));
-            }
-        }
+        // if (is_wp_error($response)) {
+        //     error_log("[FaaasterCloudflare] purgeAll error: " . $response->get_error_message());
+        // } else {
+        //     $response_code = wp_remote_retrieve_response_code($response);
+        //     if ($response_code !== 200) {
+        //         error_log("[FaaasterCloudflare] purgeAll failed (" . $response_code . "): " . wp_remote_retrieve_body($response));
+        //     }
+        // }
     }
 
     /**
@@ -81,12 +78,12 @@ class FaaasterCloudflare
     public function purgeUrls($url)
     {
         if ($this->purgedAll) {
-            error_log("[FaaasterCloudflare] purgeUrls SKIPPED (purgeAll already done): " . $url);
+            // error_log("[FaaasterCloudflare]purgeUrls SKIPPED (purgeAll already done): " . $url);
             return;
         }
 
         $this->urlsToPurge[] = $url;
-        error_log("[FaaasterCloudflare] purgeUrls queued (" . count($this->urlsToPurge) . "): " . $url);
+        // error_log("[FaaasterCloudflare] purgeUrls queued (" . count($this->urlsToPurge) . "): " . $url);
 
         if (!$this->shutdownRegistered) {
             $this->shutdownRegistered = true;
@@ -107,26 +104,25 @@ class FaaasterCloudflare
         $urls = array_values(array_unique($this->urlsToPurge));
         $this->urlsToPurge = [];
 
-        error_log("[FaaasterCloudflare] flushPurgeUrls -> " . count($urls) . " unique URLs to purge");
+        // error_log("[FaaasterCloudflare] flushPurgeUrls -> " . count($urls) . " unique URLs to purge");
 
         $chunks = array_chunk($urls, 30);
         foreach ($chunks as $i => $chunk) {
-            error_log("[FaaasterCloudflare] flushPurgeUrls -> POST " . $this->getEndpointUrl() . " scope=urls, chunk " . ($i + 1) . "/" . count($chunks) . ", " . count($chunk) . " URLs: " . implode(', ', $chunk));
+            // error_log("[FaaasterCloudflare] flushPurgeUrls -> POST " . $this->getEndpointUrl() . " scope=urls, chunk " . ($i + 1) . "/" . count($chunks) . ", " . count($chunk) . " URLs: " . implode(', ', $chunk));
 
             $response = wp_remote_post($this->getEndpointUrl(), [
                 'body' => json_encode(['scope' => 'urls', 'urls' => $chunk]),
                 'headers' => $this->getAuthHeaders(),
             ]);
 
-            if (is_wp_error($response)) {
-                error_log("[FaaasterCloudflare] flushPurgeUrls error: " . $response->get_error_message());
-            } else {
-                $response_code = wp_remote_retrieve_response_code($response);
-                error_log("[FaaasterCloudflare] flushPurgeUrls response: " . $response_code);
-                if ($response_code !== 200) {
-                    error_log("[FaaasterCloudflare] flushPurgeUrls body: " . wp_remote_retrieve_body($response));
-                }
-            }
+            // if (is_wp_error($response)) {
+            //     error_log("[FaaasterCloudflare] flushPurgeUrls error: " . $response->get_error_message());
+            // } else {
+            //     $response_code = wp_remote_retrieve_response_code($response);
+            //     if ($response_code !== 200) {
+            //         error_log("[FaaasterCloudflare] flushPurgeUrls failed (" . $response_code . "): " . wp_remote_retrieve_body($response));
+            //     }
+            // }
         }
     }
 }
