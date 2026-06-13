@@ -1,23 +1,34 @@
 <?php
-if (!file_exists('/app/.include/manager.php')) {
-    exit;
+// Legacy constants (OAUTH_*) live in /app/.include/manager.php on legacy pods.
+// On v1 pods Next is the IdP and these constants are irrelevant, so the file
+// is optional and we no longer hard-exit when OAUTH_* are missing.
+if (file_exists('/app/.include/manager.php')) {
+    require_once('/app/.include/manager.php');
 }
 
-require_once('/app/.include/manager.php');
-
-if (!defined('OAUTH_STATE') || !defined('OAUTH_ENDPOINT') || !defined('OAUTH_CLIENT_ID') || !defined('OAUTH_GET_USER')) {
-    exit;
+// Next IdP base (migration trou #1 §5.2). The main plugin file defines
+// FAAASTER_API_BASE; define a fallback here in case loginSSO runs standalone.
+if (!defined('FAAASTER_API_BASE')) {
+    define(
+        'FAAASTER_API_BASE',
+        defined('CUSTOM_FAAASTER_API_BASE') ? CUSTOM_FAAASTER_API_BASE : 'https://app.faaaster.io'
+    );
 }
+
 class LoginSSO
 {
+    /** Next userinfo endpoint — validates the short signed JWT minted by /sso
+     * and returns { success, name }. Replaces the legacy OAUTH_GET_USER. */
+    private function userinfoUrl()
+    {
+        return rtrim(FAAASTER_API_BASE, '/') . '/api/sso/userinfo';
+    }
 
     public function authorize($param)
     {
-
-        if (OAUTH_STATE !== $param['state']) {
-            exit;
-        }
-
+        // No more static `state` check: the access_token is now a short signed
+        // JWT (verified by Next /api/sso/userinfo) — the signature + 90s expiry
+        // + instance audience replace the legacy implicit-flow state.
         $access_token = $param['access_token'];
 
         setcookie('tc_token', $access_token, time() + $param['expires_in']);
@@ -33,15 +44,22 @@ class LoginSSO
             return $loginResult;
         }
 
-        $parameters = array(
-            'response_type' => 'token',
-            'client_id' => OAUTH_CLIENT_ID,
-            'scope' => 'username',
-            'state' => OAUTH_STATE,
-        );
-        $uri = OAUTH_ENDPOINT . "?" . http_build_query($parameters);
+        // Legacy implicit-flow redirect to the Symfony IdP (only if still
+        // configured). v1 sites have no interactive authorize endpoint — the
+        // dashboard mints the token and hits /v1/authorize directly — so a
+        // tokenless direct hit just falls back to the standard WP login.
+        if (defined('OAUTH_ENDPOINT') && OAUTH_ENDPOINT && defined('OAUTH_STATE')) {
+            $parameters = array(
+                'response_type' => 'token',
+                'client_id' => defined('OAUTH_CLIENT_ID') ? OAUTH_CLIENT_ID : '',
+                'scope' => 'username',
+                'state' => OAUTH_STATE,
+            );
+            header('Location: ' . OAUTH_ENDPOINT . '?' . http_build_query($parameters));
+            return;
+        }
 
-        header("Location: $uri");
+        header('Location: ' . (function_exists('wp_login_url') ? wp_login_url() : '/wp-login.php'));
     }
 
     // 6368
@@ -55,7 +73,7 @@ class LoginSSO
 
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
-        $conn = curl_init(OAUTH_GET_USER);
+        $conn = curl_init($this->userinfoUrl());
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($conn, CURLOPT_HTTPHEADER, array(
@@ -184,7 +202,7 @@ class LoginSSO
 
     public function verifyTCToken($token)
     {
-        $conn = curl_init(OAUTH_GET_USER);
+        $conn = curl_init($this->userinfoUrl());
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($conn, CURLOPT_HTTPHEADER, array(
