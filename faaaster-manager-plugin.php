@@ -66,7 +66,7 @@ function faaaster_disable_filters_for_manager_plugin($response)
 {
     $request_url = $_SERVER['REQUEST_URI'];
     // Check if the URL contains "manager-plugin"
-    if (strpos($request_url, 'hostmanager') !== false or strpos($request_url, 'sso') !== false) {
+    if (strpos($request_url, 'hostmanager') !== false or strpos($request_url, 'sso') !== false or strpos($request_url, 'faaaster-mcp') !== false) {
         // Remove all filters on the "rest_not_logged_in" hook
         remove_all_filters('rest_not_logged_in');
         remove_all_filters('rest_authentication_errors');
@@ -85,6 +85,7 @@ require_once(__DIR__ . '/class/loginSSO.php');
 require_once(__DIR__ . '/class/cloudflare-manager.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
+require_once(__DIR__ . '/class/mcp-abilities.php');
 
 
 $siteState = new SiteState();
