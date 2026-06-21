@@ -7,22 +7,23 @@ if (!defined('ABSPATH')) {
 function faaaster_mcp_get_registered_ability_names()
 {
     return array(
-        'faaaster-mcp/wp/site-overview',
-        'faaaster-mcp/wp/list-plugins',
-        'faaaster-mcp/wp/list-themes',
-        'faaaster-mcp/wp/search-content',
-        'faaaster-mcp/wp/get-post-details',
-        'faaaster-mcp/wp/updates-summary',
-        'faaaster-mcp/wp/create-draft-post',
-        'faaaster-mcp/wp/install-plugin',
-        'faaaster-mcp/wp/toggle-plugin',
+        'faaaster-mcp/wp-site-overview',
+        'faaaster-mcp/wp-list-plugins',
+        'faaaster-mcp/wp-list-themes',
+        'faaaster-mcp/wp-search-content',
+        'faaaster-mcp/wp-get-post-details',
+        'faaaster-mcp/wp-updates-summary',
+        'faaaster-mcp/wp-create-draft-post',
+        'faaaster-mcp/wp-refresh-abilities',
+        // NB: plugin/theme/core lifecycle (install/toggle/update) is wp-cli-direct
+        // (worker), NOT abilities — don't dual-path. cf. agent-build-vision.md §12.
     );
 }
 
 function faaaster_mcp_get_ability_definition($name)
 {
     $definitions = array(
-        'faaaster-mcp/wp/site-overview' => array(
+        'faaaster-mcp/wp-site-overview' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -32,7 +33,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress Site Overview', 'faaaster-manager-plugin'),
             'description' => __('Returns compact WordPress site overview.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/list-plugins' => array(
+        'faaaster-mcp/wp-list-plugins' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -48,7 +49,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress List Plugins', 'faaaster-manager-plugin'),
             'description' => __('Lists installed plugins with activation and update status.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/list-themes' => array(
+        'faaaster-mcp/wp-list-themes' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -64,7 +65,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress List Themes', 'faaaster-manager-plugin'),
             'description' => __('Lists installed themes and active theme.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/search-content' => array(
+        'faaaster-mcp/wp-search-content' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -82,7 +83,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress Search Content', 'faaaster-manager-plugin'),
             'description' => __('Searches posts/pages content.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/get-post-details' => array(
+        'faaaster-mcp/wp-get-post-details' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -98,7 +99,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress Get Post Details', 'faaaster-manager-plugin'),
             'description' => __('Returns details for a post/page by ID.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/updates-summary' => array(
+        'faaaster-mcp/wp-updates-summary' => array(
             'readonly' => true,
             'destructive' => false,
             'idempotent' => true,
@@ -108,7 +109,7 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress Updates Summary', 'faaaster-manager-plugin'),
             'description' => __('Returns core/plugin/theme updates summary.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/create-draft-post' => array(
+        'faaaster-mcp/wp-create-draft-post' => array(
             'readonly' => false,
             'destructive' => false,
             'idempotent' => false,
@@ -121,6 +122,9 @@ function faaaster_mcp_get_ability_definition($name)
                     'excerpt' => array('type' => 'string'),
                     'postType' => array('type' => 'string', 'enum' => array('post', 'page')),
                     'status' => array('type' => 'string', 'enum' => array('draft')),
+                    // Editorial author (a real site user id) — attribution is decoupled
+                    // from the agent's execution identity. cf. agent-build-vision.md §12.
+                    'author' => array('type' => 'integer', 'minimum' => 1),
                 ),
             ),
             'output_schema' => array('type' => 'object', 'required' => true),
@@ -128,177 +132,30 @@ function faaaster_mcp_get_ability_definition($name)
             'label' => __('WordPress Create Draft Post', 'faaaster-manager-plugin'),
             'description' => __('Creates a draft post/page.', 'faaaster-manager-plugin'),
         ),
-        'faaaster-mcp/wp/install-plugin' => array(
-            'readonly' => false,
-            'destructive' => false,
-            'idempotent' => false,
-            'input_schema' => array(
-                'type' => 'object',
-                'required' => true,
-                'properties' => array(
-                    'pluginSlug' => array('type' => 'string'),
-                    'activate' => array('type' => 'boolean'),
-                ),
-            ),
-            'output_schema' => array('type' => 'object', 'required' => true),
-            'callback' => 'faaaster_mcp_ability_install_plugin',
-            'label' => __('WordPress Install Plugin', 'faaaster-manager-plugin'),
-            'description' => __('Installs plugin from wordpress.org.', 'faaaster-manager-plugin'),
-        ),
-        'faaaster-mcp/wp/toggle-plugin' => array(
-            'readonly' => false,
+        'faaaster-mcp/wp-refresh-abilities' => array(
+            'readonly' => false, // writes the cached catalogue option
             'destructive' => false,
             'idempotent' => true,
-            'input_schema' => array(
-                'type' => 'object',
-                'required' => true,
-                'properties' => array(
-                    'pluginFile' => array('type' => 'string'),
-                    'enabled' => array('type' => 'boolean'),
-                ),
-            ),
+            'input_schema' => array('type' => 'null', 'required' => false),
             'output_schema' => array('type' => 'object', 'required' => true),
-            'callback' => 'faaaster_mcp_ability_toggle_plugin',
-            'label' => __('WordPress Toggle Plugin', 'faaaster-manager-plugin'),
-            'description' => __('Activates or deactivates a plugin.', 'faaaster-manager-plugin'),
+            'callback' => 'faaaster_mcp_ability_refresh_abilities',
+            'label' => __('Refresh Ability Catalogue', 'faaaster-manager-plugin'),
+            'description' => __('Rebuilds the cached discovery catalogue from the live registry (core + Faaaster + client-plugin abilities).', 'faaaster-manager-plugin'),
         ),
     );
 
     return $definitions[$name] ?? null;
 }
 
-function faaaster_mcp_base64url_decode($data)
-{
-    $padding = strlen($data) % 4;
-    if ($padding) {
-        $data .= str_repeat('=', 4 - $padding);
-    }
-    $decoded = base64_decode(strtr($data, '-_', '+/'), true);
-    return $decoded === false ? null : $decoded;
-}
+// Legacy JWT-direct token helpers removed — agent abilities now run via the
+// faaaster-agent/v1 shim AS a scoped opt-in user. cf. agent-build-vision.md §12.
 
-function faaaster_mcp_get_bearer_token($request)
-{
-    $auth_header = $request->get_header('Authorization');
-    if (!$auth_header || !preg_match('/^Bearer\s+(.+)$/i', $auth_header, $matches)) {
-        return null;
-    }
-    return trim($matches[1]);
-}
-
-function faaaster_mcp_validate_token($request, $ability_name = null, $operation_id = null)
-{
-    $secret = defined('WP_API_KEY') ? WP_API_KEY : false;
-    if (!$secret) {
-        return new WP_Error('config_error', 'WP_API_KEY not configured', array('status' => 500));
-    }
-
-    $token = faaaster_mcp_get_bearer_token($request);
-    if (!$token) {
-        return new WP_Error('unauthorized', 'Missing Bearer token', array('status' => 401));
-    }
-
-    $parts = explode('.', $token);
-    if (count($parts) !== 3) {
-        return new WP_Error('unauthorized', 'Invalid token format', array('status' => 401));
-    }
-
-    list($encoded_header, $encoded_payload, $encoded_signature) = $parts;
-
-    $header_raw = faaaster_mcp_base64url_decode($encoded_header);
-    $payload_raw = faaaster_mcp_base64url_decode($encoded_payload);
-    $signature_raw = faaaster_mcp_base64url_decode($encoded_signature);
-
-    if ($header_raw === null || $payload_raw === null || $signature_raw === null) {
-        return new WP_Error('unauthorized', 'Invalid token encoding', array('status' => 401));
-    }
-
-    $header = json_decode($header_raw, true);
-    $claims = json_decode($payload_raw, true);
-
-    if (!is_array($header) || !is_array($claims)) {
-        return new WP_Error('unauthorized', 'Invalid token payload', array('status' => 401));
-    }
-
-    if (($header['alg'] ?? '') !== 'HS256') {
-        return new WP_Error('unauthorized', 'Unsupported token algorithm', array('status' => 401));
-    }
-
-    $signed_part = $encoded_header . '.' . $encoded_payload;
-    $expected_signature = hash_hmac('sha256', $signed_part, $secret, true);
-    if (!hash_equals($expected_signature, $signature_raw)) {
-        return new WP_Error('unauthorized', 'Invalid token signature', array('status' => 401));
-    }
-
-    $now = time();
-    $exp = isset($claims['exp']) ? intval($claims['exp']) : 0;
-    if ($exp <= $now) {
-        return new WP_Error('unauthorized', 'Token expired', array('status' => 401));
-    }
-
-    $expected_iss = defined('FAAASTER_MCP_WP_TOKEN_ISSUER') ? FAAASTER_MCP_WP_TOKEN_ISSUER : 'faaaster-next-mcp';
-    $expected_aud = defined('FAAASTER_MCP_WP_TOKEN_AUDIENCE') ? FAAASTER_MCP_WP_TOKEN_AUDIENCE : 'faaaster-wp-mcp';
-
-    if (($claims['iss'] ?? '') !== $expected_iss || ($claims['aud'] ?? '') !== $expected_aud) {
-        return new WP_Error('unauthorized', 'Token issuer/audience mismatch', array('status' => 401));
-    }
-
-    if (($claims['type'] ?? '') !== 'faaaster_wp_call') {
-        return new WP_Error('unauthorized', 'Invalid token type', array('status' => 401));
-    }
-
-    $expected_app = defined('APP_ID') ? APP_ID : null;
-    if ($expected_app && ($claims['appId'] ?? '') !== $expected_app) {
-        return new WP_Error('unauthorized', 'Application mismatch', array('status' => 403));
-    }
-
-    if (defined('BRANCH') && BRANCH && !empty($claims['branch']) && $claims['branch'] !== BRANCH) {
-        return new WP_Error('unauthorized', 'Branch mismatch', array('status' => 403));
-    }
-
-    if ($ability_name && ($claims['ability'] ?? '') !== $ability_name) {
-        return new WP_Error('unauthorized', 'Ability mismatch', array('status' => 403));
-    }
-
-    if ($operation_id && ($claims['operationId'] ?? '') !== $operation_id) {
-        return new WP_Error('unauthorized', 'Operation mismatch', array('status' => 403));
-    }
-
-    $jti = isset($claims['jti']) ? sanitize_key($claims['jti']) : '';
-    if (!$jti) {
-        return new WP_Error('unauthorized', 'Missing token jti', array('status' => 401));
-    }
-
-    $jti_key = 'faaaster_mcp_jti_' . md5($jti);
-    if (get_transient($jti_key)) {
-        return new WP_Error('unauthorized', 'Token replay detected', array('status' => 401));
-    }
-
-    $ttl = max(1, $exp - $now);
-    set_transient($jti_key, '1', $ttl + 30);
-
-    return $claims;
-}
-
-function faaaster_mcp_set_context($claims)
-{
-    $GLOBALS['faaaster_mcp_context'] = array(
-        'authorized' => true,
-        'claims' => $claims,
-    );
-}
-
-function faaaster_mcp_clear_context()
-{
-    $GLOBALS['faaaster_mcp_context'] = array(
-        'authorized' => false,
-        'claims' => null,
-    );
-}
-
+// Permission for the Faaaster abilities, evaluated against the CURRENT WP user
+// (the scoped opt-in agent user set by the faaaster-agent/v1 shim) — defense in
+// depth under the Next broker. Replaces the old global-flag-set-by-JWT model.
 function faaaster_mcp_ability_permission($input = null)
 {
-    return !empty($GLOBALS['faaaster_mcp_context']['authorized']);
+    return is_user_logged_in() && current_user_can('edit_posts');
 }
 
 function faaaster_mcp_register_ability_categories()
@@ -317,11 +174,30 @@ function faaaster_mcp_register_ability_categories()
 }
 add_action('wp_abilities_api_categories_init', 'faaaster_mcp_register_ability_categories');
 
+/** The legacy ability defs use `required` as a BOOLEAN (invalid JSON Schema — the
+ *  WP 7.0 core Abilities API rejects it, so registration silently fails) and
+ *  `type:null` for no-input. Normalize to valid schema before registering. */
+function faaaster_mcp_normalize_schema($schema)
+{
+    if (!is_array($schema)) {
+        return array('type' => 'object');
+    }
+    if (isset($schema['required']) && !is_array($schema['required'])) {
+        unset($schema['required']);
+    }
+    if (($schema['type'] ?? '') === 'null') {
+        return array('type' => 'object');
+    }
+    return $schema;
+}
+
 function faaaster_mcp_register_abilities()
 {
-    if (!function_exists('wp_register_ability')) {
+    static $done = false;
+    if ($done || !function_exists('wp_register_ability')) {
         return;
     }
+    $done = true;
 
     foreach (faaaster_mcp_get_registered_ability_names() as $ability_name) {
         $definition = faaaster_mcp_get_ability_definition($ability_name);
@@ -335,8 +211,8 @@ function faaaster_mcp_register_abilities()
                 'label' => $definition['label'],
                 'description' => $definition['description'],
                 'category' => 'faaaster-mcp',
-                'input_schema' => $definition['input_schema'],
-                'output_schema' => $definition['output_schema'],
+                'input_schema' => faaaster_mcp_normalize_schema($definition['input_schema']),
+                'output_schema' => faaaster_mcp_normalize_schema($definition['output_schema']),
                 'execute_callback' => $definition['callback'],
                 'permission_callback' => 'faaaster_mcp_ability_permission',
                 'meta' => array(
@@ -351,119 +227,240 @@ function faaaster_mcp_register_abilities()
         );
     }
 }
-add_action('wp_abilities_api_init', 'faaaster_mcp_register_abilities');
-
-function faaaster_mcp_register_rest_routes()
-{
-    register_rest_route('faaaster-mcp/v1', '/abilities', array(
-        'methods' => WP_REST_Server::READABLE,
-        'callback' => 'faaaster_mcp_rest_list_abilities',
-        'permission_callback' => '__return_true',
-    ));
-
-    register_rest_route('faaaster-mcp/v1', '/abilities/run', array(
-        'methods' => WP_REST_Server::CREATABLE,
-        'callback' => 'faaaster_mcp_rest_run_ability',
-        'permission_callback' => '__return_true',
-    ));
+// Register on both candidate hooks (WP 7.0 fires the abilities init under one of
+// these; static-guarded so it runs once). Mirrors the validated POC.
+foreach (array('abilities_api_init', 'wp_abilities_api_init') as $faaaster_mcp_init_hook) {
+    add_action($faaaster_mcp_init_hook, 'faaaster_mcp_register_abilities');
 }
-add_action('rest_api_init', 'faaaster_mcp_register_rest_routes');
 
-function faaaster_mcp_rest_list_abilities($request)
+/* ---------------------------------------------------------------------------
+ * Faaaster agent — abilities access (opt-in, scoped identity)
+ *
+ * The agent runs WP abilities via the CORE Abilities API (/wp-abilities/v1), AS
+ * a dedicated scoped WP user that the OWNER explicitly provisions (opt-in). These
+ * localhost-only routes live under `faaaster-agent/v1` — a namespace that does
+ * NOT match the main plugin's hostmanager/sso/faaaster-mcp skip-plugins filter,
+ * so client/ecosystem abilities load their plugins normally.
+ *
+ * Replaces the old faaaster-mcp/v1 JWT-direct surface (validated live 2026-06-20;
+ * cf. agent-build-vision.md §12). Authorship = a CHOSEN author passed in `input`,
+ * never the executor. Method follows the ability annotation (readonly→GET).
+ * ------------------------------------------------------------------------- */
+
+const FAAASTER_AGENT_USER_OPTION = 'faaaster_agent_ability_user';
+
+// Cached discovery catalogue. Stored with autoload=NO so it never bloats the
+// per-request alloptions bulk-load — it is read ONLY by the list_abilities route
+// (one indexed SELECT) and written ONLY on refresh (rare). This is what lets the
+// cheap, skip-plugins hostmanager route serve the full registry without ever
+// paying a live plugin bootstrap on the discovery path.
+const FAAASTER_AGENT_CATALOG_OPTION = 'faaaster_agent_ability_catalog';
+
+/** The opt-in scoped user the agent runs abilities as. 0 = access NOT enabled
+ *  (no get-or-create here — the user is created only by the owner opt-in below). */
+function faaaster_agent_ability_user_id()
 {
-    $claims = faaaster_mcp_validate_token($request);
-    if (is_wp_error($claims)) {
-        return $claims;
+    $id = (int) get_option(FAAASTER_AGENT_USER_OPTION, 0);
+    return ($id && get_user_by('id', $id)) ? $id : 0;
+}
+
+/** Build the discovery catalogue from the LIVE registry and cache it (autoload=no).
+ *  MUST be called from a plugins-loaded context (the faaaster-agent enable/run
+ *  routes, or the refresh ability) so client-plugin abilities are present — NEVER
+ *  from the skip-plugins hostmanager path. Returns the stored catalogue. */
+function faaaster_agent_build_catalog()
+{
+    $uid = faaaster_agent_ability_user_id();
+    if ($uid && get_current_user_id() !== $uid) {
+        wp_set_current_user($uid); // the core list route needs a permitted identity
     }
+    $resp = rest_do_request(new WP_REST_Request('GET', '/wp-abilities/v1/abilities'));
+    $data = rest_get_server()->response_to_data($resp, false);
+    $catalog = array(
+        'data'    => is_array($data) ? $data : array(),
+        'builtAt' => time(),
+    );
+    update_option(FAAASTER_AGENT_CATALOG_OPTION, $catalog, false); // autoload=no
+    return $catalog;
+}
 
-    $abilities = array();
+function faaaster_agent_register_routes()
+{
+    $localhost = array('permission_callback' => '__return_true'); // localhost-only (worker only)
 
-    foreach (faaaster_mcp_get_registered_ability_names() as $ability_name) {
-        $ability = wp_get_ability($ability_name);
-        if (!$ability) {
-            continue;
-        }
+    // DISCOVERY (proxy-reachable): serves the CACHED catalogue, under the
+    // hostmanager namespace so it reaches Next via the infrapi/hostmanager proxy
+    // (matches lib/infrapi.ts listAbilities). It only reads an option (get_option
+    // works fine under skip-plugins) — the catalogue is built elsewhere, in
+    // plugins-loaded contexts, so this path NEVER pays a live plugin bootstrap.
+    // Gated like every other hostmanager route. Returns { data, builtAt, supported }.
+    register_rest_route('hostmanager/v1', '/list_abilities', array(
+        'methods'             => WP_REST_Server::READABLE,
+        'callback'            => 'faaaster_agent_rest_list',
+        'permission_callback' => '__return_true',
+    ));
 
-        $abilities[] = array(
-            'name' => $ability->get_name(),
-            'label' => $ability->get_label(),
-            'description' => $ability->get_description(),
-            'category' => $ability->get_category(),
-            'input_schema' => $ability->get_input_schema(),
-            'output_schema' => $ability->get_output_schema(),
-            'meta' => $ability->get_meta(),
-        );
-    }
+    // EXECUTION (localhost-only): run as the opt-in scoped user, reached ONLY by
+    // the in-pod worker over 127.0.0.1 — never the external proxy.
+    register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost, array(
+        'methods'  => WP_REST_Server::CREATABLE,
+        'callback' => 'faaaster_agent_rest_run',
+    )));
+    register_rest_route('faaaster-agent/v1', '/enable', array_merge($localhost, array(
+        'methods'  => WP_REST_Server::CREATABLE,
+        'callback' => 'faaaster_agent_rest_enable',
+    )));
+    register_rest_route('faaaster-agent/v1', '/disable', array_merge($localhost, array(
+        'methods'  => WP_REST_Server::CREATABLE,
+        'callback' => 'faaaster_agent_rest_disable',
+    )));
+}
+add_action('rest_api_init', 'faaaster_agent_register_routes');
 
+/** Discovery (served under hostmanager/v1/list_abilities): returns the CACHED
+ *  catalogue (core + Faaaster + client-plugin abilities) — a single get_option, so
+ *  it is cheap even under skip-plugins and never triggers a live plugin bootstrap.
+ *  The catalogue is (re)built by faaaster_agent_build_catalog() on enable / after a
+ *  run / via the refresh ability. `builtAt` lets Next decide whether to refresh.
+ *  Shape matches lib/infrapi.ts + the list-abilities agent tool. */
+function faaaster_agent_rest_list($request)
+{
+    $catalog = get_option(FAAASTER_AGENT_CATALOG_OPTION, array());
+    $data    = (is_array($catalog) && isset($catalog['data']) && is_array($catalog['data'])) ? $catalog['data'] : array();
     return new WP_REST_Response(array(
-        'ok' => true,
-        'abilities' => $abilities,
+        'code'      => 'ok',
+        'ok'        => true,
+        'supported' => true,
+        'builtAt'   => (is_array($catalog) && isset($catalog['builtAt'])) ? (int) $catalog['builtAt'] : null,
+        'data'      => $data,
     ), 200);
 }
 
-function faaaster_mcp_rest_run_ability($request)
+/** Run an ability AS the opt-in scoped user, via the core /run route.
+ *  Body: { name, input }. Method follows the annotation (readonly→GET / mutation→POST);
+ *  input is passed under the `input` object param (core contract). */
+function faaaster_agent_rest_run($request)
 {
     $params = $request->get_json_params();
+    $name   = isset($params['name']) ? (string) $params['name'] : '';
+    $input  = isset($params['input']) ? $params['input'] : array();
 
-    $ability_name = isset($params['name']) ? sanitize_text_field($params['name']) : '';
-    $operation_id = isset($params['operationId']) ? sanitize_text_field($params['operationId']) : '';
-
-    if (!$ability_name) {
-        return new WP_Error('invalid_request', 'Ability name is required', array('status' => 400));
+    // Core ability names are single-namespace: lowercase alphanumerics + hyphens,
+    // exactly one "/" separating namespace from ability (e.g. faaaster-mcp/wp-create-draft-post).
+    if (!preg_match('#^[a-z0-9-]+/[a-z0-9-]+$#', $name)) {
+        return new WP_Error('invalid_request', 'Invalid ability name', array('status' => 400));
     }
 
-    if (!in_array($ability_name, faaaster_mcp_get_registered_ability_names(), true)) {
+    $uid = faaaster_agent_ability_user_id();
+    if (!$uid) {
+        return new WP_Error('ability_access_disabled', 'Agent ability access is not enabled for this site', array('status' => 403));
+    }
+    wp_set_current_user($uid);
+
+    $ability = function_exists('wp_get_ability') ? wp_get_ability($name) : null;
+    if (!$ability) {
         return new WP_Error('rest_ability_not_found', 'Ability not found', array('status' => 404));
     }
+    $meta     = method_exists($ability, 'get_meta') ? (array) $ability->get_meta() : array();
+    $readonly = (bool) ($meta['annotations']['readonly'] ?? true);
 
-    $claims = faaaster_mcp_validate_token($request, $ability_name, $operation_id);
-    if (is_wp_error($claims)) {
-        return $claims;
+    // Defense-in-depth: a read-scoped caller (the agent's read-ability tool) sets
+    // readonlyOnly so a mutation ability can never be run through the read path
+    // (privilege escalation). The annotation is the authority — resolved here.
+    if (!empty($params['readonlyOnly']) && !$readonly) {
+        return new WP_Error('ability_not_readonly', 'Ability is not read-only', array('status' => 403));
     }
 
-    $ability = wp_get_ability($ability_name);
-    if (!$ability || !$ability->get_meta_item('show_in_rest')) {
-        return new WP_Error('rest_ability_not_found', 'Ability not found', array('status' => 404));
+    $req = new WP_REST_Request($readonly ? 'GET' : 'POST', '/wp-abilities/v1/abilities/' . $name . '/run');
+    // Core requires `input` to ALWAYS be an object param (even for no-input abilities,
+    // whose schema normalizes to type:object) — send an empty object when there's none.
+    $input_obj = (is_array($input) && !empty($input)) ? $input : new stdClass();
+    $body = array('input' => $input_obj);
+    if ($readonly) {
+        $req->set_query_params($body);
+    } else {
+        $req->set_header('Content-Type', 'application/json');
+        $req->set_body_params($body);
+        $req->set_body(wp_json_encode($body));
+    }
+    $resp = rest_do_request($req);
+
+    // Opportunistic catalogue refresh: plugins + registry are already loaded for
+    // this run, so a rebuild is ~free. Only when stale (>1h) and not the refresh
+    // ability itself (it already rebuilt) — keeps discovery warm via normal usage.
+    if ($name !== 'faaaster-mcp/wp-refresh-abilities') {
+        $cat     = get_option(FAAASTER_AGENT_CATALOG_OPTION, array());
+        $builtAt = (is_array($cat) && isset($cat['builtAt'])) ? (int) $cat['builtAt'] : 0;
+        if ((time() - $builtAt) > HOUR_IN_SECONDS) {
+            faaaster_agent_build_catalog();
+        }
     }
 
-    $input = isset($params['input']) ? $params['input'] : null;
+    return new WP_REST_Response(array(
+        'ok'      => !$resp->is_error(),
+        'status'  => $resp->get_status(),
+        'ability' => $name,
+        'ranAs'   => $uid,
+        'data'    => rest_get_server()->response_to_data($resp, false),
+    ), 200);
+}
 
-    faaaster_mcp_set_context($claims);
-
-    try {
-        $input = $ability->normalize_input($input);
-        $valid = $ability->validate_input($input);
-        if (is_wp_error($valid)) {
-            $valid->add_data(array('status' => 400));
-            return $valid;
-        }
-
-        $permission = $ability->check_permissions($input);
-        if (is_wp_error($permission)) {
-            $permission->add_data(array('status' => 403));
-            return $permission;
-        }
-        if (!$permission) {
-            return new WP_Error('rest_ability_cannot_execute', 'Permission denied', array('status' => 403));
-        }
-
-        $result = $ability->execute($input);
-        if (is_wp_error($result)) {
-            if (!$result->get_error_data('status')) {
-                $result->add_data(array('status' => 500));
-            }
-            return $result;
-        }
-
-        return new WP_REST_Response(array(
-            'ok' => true,
-            'ability' => $ability_name,
-            'operationId' => $operation_id ?: null,
-            'result' => $result,
-        ), 200);
-    } finally {
-        faaaster_mcp_clear_context();
+/** Owner opt-in: provision the scoped agent user (chosen displayName + scoped role).
+ *  Creating this user IS the act of granting ability access. */
+function faaaster_agent_rest_enable($request)
+{
+    $existing = faaaster_agent_ability_user_id();
+    if ($existing) {
+        return new WP_REST_Response(array('ok' => true, 'userId' => $existing, 'already' => true), 200);
     }
+
+    $params = $request->get_json_params();
+    $name   = isset($params['displayName']) ? sanitize_text_field($params['displayName']) : 'Faaaster Agent';
+    $role   = isset($params['role']) ? sanitize_key($params['role']) : 'editor';
+    if (!get_role($role)) {
+        $role = 'editor';
+    }
+
+    $login = 'faaaster-agent';
+    $user  = get_user_by('login', $login);
+    if ($user) {
+        $id = (int) $user->ID;
+        wp_update_user(array('ID' => $id, 'display_name' => $name, 'role' => $role));
+    } else {
+        $id = wp_insert_user(array(
+            'user_login'   => $login,
+            'user_pass'    => wp_generate_password(64, true, true),
+            'display_name' => $name,
+            'role'         => $role,
+        ));
+        if (is_wp_error($id)) {
+            return $id;
+        }
+        $id = (int) $id;
+    }
+    update_option(FAAASTER_AGENT_USER_OPTION, $id, false);
+    // Populate the discovery catalogue now — enable runs in a plugins-loaded
+    // context (faaaster-agent namespace), so client abilities are captured.
+    $catalog = faaaster_agent_build_catalog();
+    return new WP_REST_Response(array(
+        'ok'      => true,
+        'userId'  => $id,
+        'role'    => $role,
+        'catalog' => array('count' => count($catalog['data']), 'builtAt' => $catalog['builtAt']),
+    ), 200);
+}
+
+/** Kill-switch: revoke ability access — remove the options AND the scoped user. */
+function faaaster_agent_rest_disable($request)
+{
+    $id = faaaster_agent_ability_user_id();
+    delete_option(FAAASTER_AGENT_USER_OPTION);
+    delete_option(FAAASTER_AGENT_CATALOG_OPTION); // drop the cached catalogue too
+    if ($id) {
+        require_once ABSPATH . 'wp-admin/includes/user.php';
+        wp_delete_user($id);
+    }
+    return new WP_REST_Response(array('ok' => true, 'removed' => $id), 200);
 }
 
 function faaaster_mcp_ability_site_overview($input = null)
@@ -729,105 +726,44 @@ function faaaster_mcp_ability_create_draft_post($input)
         'post_type' => $post_type,
     );
 
+    // Editorial authorship is decoupled from the execution identity: attribute the
+    // post to a chosen real site user when provided (the agent runs as a scoped
+    // editor with edit_others_posts). AI provenance is recorded separately as meta —
+    // the displayed author is NOT the agent. cf. agent-build-vision.md §12.
+    $author_id = isset($input['author']) ? absint($input['author']) : 0;
+    if ($author_id && get_user_by('id', $author_id)) {
+        $post_arr['post_author'] = $author_id;
+    }
+
     $post_id = wp_insert_post($post_arr, true);
     if (is_wp_error($post_id)) {
         return $post_id;
     }
 
+    update_post_meta($post_id, '_faaaster_agent_provenance', 'ai');
+    update_post_meta($post_id, '_faaaster_agent_executed_by', get_current_user_id());
+
     return array(
         'postId' => intval($post_id),
         'postType' => $post_type,
         'status' => get_post_status($post_id),
+        'author' => intval(get_post_field('post_author', $post_id)),
         'editLink' => get_edit_post_link($post_id, 'raw'),
         'link' => get_permalink($post_id),
     );
 }
 
-function faaaster_mcp_ability_install_plugin($input)
+/** On-demand discovery refresh: rebuild + cache the catalogue. Runs in the
+ *  faaaster-agent run context (plugins loaded) so client abilities are captured.
+ *  The single explicit refresh lever (agent / UI / throttled session-start). */
+function faaaster_mcp_ability_refresh_abilities($input)
 {
-    if (!is_array($input)) {
-        $input = array();
-    }
-
-    $plugin_slug = sanitize_key($input['pluginSlug'] ?? '');
-    if (!$plugin_slug) {
-        return new WP_Error('rest_ability_invalid_input', 'pluginSlug is required', array('status' => 400));
-    }
-
-    $activate = !empty($input['activate']);
-
-    require_once ABSPATH . 'wp-admin/includes/plugin-install.php';
-    require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
-    require_once ABSPATH . 'wp-admin/includes/file.php';
-
-    $plugin_info = plugins_api('plugin_information', array(
-        'slug' => $plugin_slug,
-        'fields' => array('sections' => false),
-    ));
-
-    if (is_wp_error($plugin_info)) {
-        return $plugin_info;
-    }
-
-    $skin = class_exists('HostManagerQuietSkin') ? new HostManagerQuietSkin() : new Automatic_Upgrader_Skin();
-    $upgrader = new Plugin_Upgrader($skin);
-    $installed = $upgrader->install($plugin_info->download_link);
-
-    if (is_wp_error($installed)) {
-        return $installed;
-    }
-
-    if (!$installed) {
-        return new WP_Error('install_failed', 'Plugin installation failed', array('status' => 500));
-    }
-
-    $plugin_file = $upgrader->plugin_info();
-    if (!$plugin_file) {
-        return new WP_Error('install_failed', 'Plugin installed but plugin file not detected', array('status' => 500));
-    }
-
-    if ($activate) {
-        $activation = activate_plugin($plugin_file);
-        if (is_wp_error($activation)) {
-            return $activation;
-        }
-    }
-
+    $catalog = faaaster_agent_build_catalog();
     return array(
-        'pluginSlug' => $plugin_slug,
-        'pluginFile' => $plugin_file,
-        'activated' => is_plugin_active($plugin_file),
+        'count'   => count($catalog['data']),
+        'builtAt' => $catalog['builtAt'],
     );
 }
 
-function faaaster_mcp_ability_toggle_plugin($input)
-{
-    if (!is_array($input)) {
-        $input = array();
-    }
-
-    $plugin_file = sanitize_text_field($input['pluginFile'] ?? '');
-    if (!$plugin_file) {
-        return new WP_Error('rest_ability_invalid_input', 'pluginFile is required', array('status' => 400));
-    }
-
-    if (!isset($input['enabled'])) {
-        return new WP_Error('rest_ability_invalid_input', 'enabled is required', array('status' => 400));
-    }
-
-    $enabled = (bool) $input['enabled'];
-
-    if ($enabled) {
-        $activation = activate_plugin($plugin_file);
-        if (is_wp_error($activation)) {
-            return $activation;
-        }
-    } else {
-        deactivate_plugins($plugin_file, false, false);
-    }
-
-    return array(
-        'pluginFile' => $plugin_file,
-        'enabled' => is_plugin_active($plugin_file),
-    );
-}
+// install-plugin / toggle-plugin callbacks removed — plugin lifecycle is
+// wp-cli-direct (worker), not an ability. cf. agent-build-vision.md §12.
