@@ -14,9 +14,18 @@ function faaaster_mcp_get_registered_ability_names()
         'faaaster-mcp/wp-get-post-details',
         'faaaster-mcp/wp-updates-summary',
         'faaaster-mcp/wp-create-draft-post',
+        'faaaster-mcp/wp-list-content',
+        'faaaster-mcp/wp-list-media',
+        'faaaster-mcp/wp-list-users',
+        'faaaster-mcp/wp-list-taxonomy-terms',
+        'faaaster-mcp/wp-list-comments',
+        'faaaster-mcp/wp-update-post',
+        'faaaster-mcp/wp-moderate-comment',
         'faaaster-mcp/wp-refresh-abilities',
         // NB: plugin/theme/core lifecycle (install/toggle/update) is wp-cli-direct
         // (worker), NOT abilities — don't dual-path. cf. agent-build-vision.md §12.
+        // NB: deliberately EXCLUDED (too dangerous as a generic ability): arbitrary
+        // code-snippet creation (RCE) and DB-wide search-replace (corruption).
     );
 }
 
@@ -131,6 +140,136 @@ function faaaster_mcp_get_ability_definition($name)
             'callback' => 'faaaster_mcp_ability_create_draft_post',
             'label' => __('WordPress Create Draft Post', 'faaaster-manager-plugin'),
             'description' => __('Creates a draft post/page.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-list-content' => array(
+            'readonly' => true,
+            'destructive' => false,
+            'idempotent' => true,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => false,
+                'properties' => array(
+                    'postType' => array('type' => 'string', 'enum' => array('post', 'page'), 'description' => __('Content type to list. Default "post".', 'faaaster-manager-plugin')),
+                    'status' => array('type' => 'string', 'enum' => array('any', 'publish', 'draft', 'pending', 'private', 'future'), 'description' => __('Status filter. Default "any" (all statuses the user may read).', 'faaaster-manager-plugin')),
+                    'search' => array('type' => 'string', 'description' => __('Optional keyword filter. OMIT to list everything — this is a LIST, not a search.', 'faaaster-manager-plugin')),
+                    'limit' => array('type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 20, 'description' => __('Max items to return (1–100). Default 20.', 'faaaster-manager-plugin')),
+                    'orderby' => array('type' => 'string', 'enum' => array('date', 'modified', 'title'), 'description' => __('Sort field. Default "date".', 'faaaster-manager-plugin')),
+                    'order' => array('type' => 'string', 'enum' => array('asc', 'desc'), 'description' => __('Sort direction. Default "desc".', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_list_content',
+            'label' => __('List WordPress content', 'faaaster-manager-plugin'),
+            'description' => __('Lists posts or pages (most recent first by default), optionally filtered by status or keyword. Use THIS to enumerate/list content; use wp-search-content only for a keyword search.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-list-media' => array(
+            'readonly' => true,
+            'destructive' => false,
+            'idempotent' => true,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => false,
+                'properties' => array(
+                    'mimeType' => array('type' => 'string', 'description' => __('Optional MIME filter, e.g. "image" or "image/png".', 'faaaster-manager-plugin')),
+                    'search' => array('type' => 'string', 'description' => __('Optional keyword filter on title/filename.', 'faaaster-manager-plugin')),
+                    'limit' => array('type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 20, 'description' => __('Max items (1–100). Default 20.', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_list_media',
+            'label' => __('List WordPress media', 'faaaster-manager-plugin'),
+            'description' => __('Lists media-library items (attachments), most recent first; filter by MIME type or keyword.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-list-users' => array(
+            'readonly' => true,
+            'destructive' => false,
+            'idempotent' => true,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => false,
+                'properties' => array(
+                    'role' => array('type' => 'string', 'description' => __('Optional role filter, e.g. "author", "editor".', 'faaaster-manager-plugin')),
+                    'search' => array('type' => 'string', 'description' => __('Optional keyword filter on name/login.', 'faaaster-manager-plugin')),
+                    'limit' => array('type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 50, 'description' => __('Max users (1–100). Default 50.', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_list_users',
+            'label' => __('List WordPress users', 'faaaster-manager-plugin'),
+            'description' => __('Lists site users (id, name, slug, roles — NO email or other PII). Useful to choose a content author.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-list-taxonomy-terms' => array(
+            'readonly' => true,
+            'destructive' => false,
+            'idempotent' => true,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => false,
+                'properties' => array(
+                    'taxonomy' => array('type' => 'string', 'enum' => array('category', 'post_tag'), 'description' => __('Which taxonomy. Default "category".', 'faaaster-manager-plugin')),
+                    'search' => array('type' => 'string', 'description' => __('Optional keyword filter on term name.', 'faaaster-manager-plugin')),
+                    'limit' => array('type' => 'integer', 'minimum' => 1, 'maximum' => 200, 'default' => 50, 'description' => __('Max terms (1–200). Default 50.', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_list_taxonomy_terms',
+            'label' => __('List taxonomy terms', 'faaaster-manager-plugin'),
+            'description' => __('Lists categories or tags (id, name, slug, post count).', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-list-comments' => array(
+            'readonly' => true,
+            'destructive' => false,
+            'idempotent' => true,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => false,
+                'properties' => array(
+                    'status' => array('type' => 'string', 'enum' => array('approve', 'hold', 'spam', 'trash', 'all'), 'description' => __('Comment status filter. Default "approve" (approved).', 'faaaster-manager-plugin')),
+                    'postId' => array('type' => 'integer', 'minimum' => 1, 'description' => __('Optional: only comments on this post id.', 'faaaster-manager-plugin')),
+                    'limit' => array('type' => 'integer', 'minimum' => 1, 'maximum' => 100, 'default' => 20, 'description' => __('Max comments (1–100). Default 20.', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_list_comments',
+            'label' => __('List comments', 'faaaster-manager-plugin'),
+            'description' => __('Lists comments by status (default approved), optionally for one post. Returns author name, excerpt, status — NO email.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-update-post' => array(
+            'readonly' => false,
+            'destructive' => false,
+            'idempotent' => false,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => true,
+                'properties' => array(
+                    'id' => array('type' => 'integer', 'minimum' => 1, 'description' => __('REQUIRED. Id of the post/page to update.', 'faaaster-manager-plugin')),
+                    'title' => array('type' => 'string', 'description' => __('New title (optional).', 'faaaster-manager-plugin')),
+                    'content' => array('type' => 'string', 'description' => __('New content (optional).', 'faaaster-manager-plugin')),
+                    'excerpt' => array('type' => 'string', 'description' => __('New excerpt (optional).', 'faaaster-manager-plugin')),
+                    'status' => array('type' => 'string', 'enum' => array('publish', 'draft', 'pending', 'private'), 'description' => __('New status (optional).', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_update_post',
+            'label' => __('Update a post', 'faaaster-manager-plugin'),
+            'description' => __('Updates an existing post/page by id (title/content/excerpt/status). Requires edit permission on the target post. "id" is REQUIRED.', 'faaaster-manager-plugin'),
+        ),
+        'faaaster-mcp/wp-moderate-comment' => array(
+            'readonly' => false,
+            'destructive' => false,
+            'idempotent' => false,
+            'input_schema' => array(
+                'type' => 'object',
+                'required' => true,
+                'properties' => array(
+                    'id' => array('type' => 'integer', 'minimum' => 1, 'description' => __('REQUIRED. Comment id.', 'faaaster-manager-plugin')),
+                    'action' => array('type' => 'string', 'enum' => array('approve', 'hold', 'spam', 'trash'), 'description' => __('REQUIRED. approve | hold (unapprove) | spam | trash.', 'faaaster-manager-plugin')),
+                ),
+            ),
+            'output_schema' => array('type' => 'object', 'required' => true),
+            'callback' => 'faaaster_mcp_ability_moderate_comment',
+            'label' => __('Moderate a comment', 'faaaster-manager-plugin'),
+            'description' => __('Sets a comment status: approve | hold | spam | trash. Requires moderate permission. "id" and "action" REQUIRED.', 'faaaster-manager-plugin'),
         ),
         'faaaster-mcp/wp-refresh-abilities' => array(
             'readonly' => false, // writes the cached catalogue option
@@ -526,13 +665,33 @@ function faaaster_agent_rest_proxy($request)
     if (!in_array($method, array('GET', 'POST', 'PUT', 'PATCH', 'DELETE'), true)) {
         return new WP_Error('invalid_request', 'Invalid method', array('status' => 400));
     }
-    // Route must be a REST path: leading slash, /namespace/… charset.
-    if ($route === '' || $route[0] !== '/' || !preg_match('#^/[a-z0-9][a-z0-9._/-]*$#i', $route) || strpos($route, '..') !== false) {
+    // Route must be a REST path: leading slash, /namespace/… charset, no traversal,
+    // and NO double-slash (else nginx merge_slashes could collapse `/wp/v2//users`
+    // → `/wp/v2/users` and dodge the write denylist below).
+    if ($route === '' || $route[0] !== '/' || !preg_match('#^/[a-z0-9][a-z0-9._/-]*$#i', $route) || strpos($route, '..') !== false || strpos($route, '//') !== false) {
         return new WP_Error('invalid_request', 'Invalid route', array('status' => 400));
     }
     // Defense-in-depth: a read-scoped task can NEVER perform a write.
     if ($readOnly && $method !== 'GET') {
         return new WP_Error('rest_not_read_only', 'Route call is not read-only', array('status' => 403, 'method' => $method));
+    }
+    // Defense-in-depth (never trust the queue): re-enforce the dangerous-route WRITE
+    // denylist in-pod too — the Next broker (validateRestWrite) is the primary gate,
+    // this is the last line. Lowercased to defeat a case bypass. Mirrors
+    // lib/services/rest/broker.ts WRITE_DENYLIST.
+    if ($method !== 'GET') {
+        $low  = strtolower($route);
+        $deny = array(
+            '/wp/v2/users', '/wp/v2/settings', '/wp/v2/plugins', '/wp/v2/themes',
+            '/wp/v2/media', '/wp/v2/templates', '/wp/v2/template-parts',
+            '/wp/v2/global-styles', '/wp/v2/font-families', '/wp/v2/font-faces',
+            '/wp/v2/widgets', '/wp/v2/block-renderer',
+        );
+        foreach ($deny as $d) {
+            if ($low === $d || strpos($low, $d . '/') === 0) {
+                return new WP_Error('rest_write_denied', 'Route is denied for writes', array('status' => 403, 'route' => $route));
+            }
+        }
     }
 
     $uid = faaaster_agent_ability_user_id();
@@ -911,6 +1070,331 @@ function faaaster_mcp_ability_create_draft_post($input)
         'author' => intval(get_post_field('post_author', $post_id)),
         'editLink' => get_edit_post_link($post_id, 'raw'),
         'link' => get_permalink($post_id),
+    );
+}
+
+function faaaster_mcp_ability_list_content($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $post_type = sanitize_key($input['postType'] ?? 'post');
+    if (!in_array($post_type, array('post', 'page'), true)) {
+        $post_type = 'post';
+    }
+
+    $status = sanitize_key($input['status'] ?? 'any');
+    if (!in_array($status, array('any', 'publish', 'draft', 'pending', 'private', 'future'), true)) {
+        $status = 'any';
+    }
+    $post_status = $status === 'any'
+        ? array('publish', 'draft', 'pending', 'private', 'future')
+        : $status;
+
+    $limit = isset($input['limit']) ? max(1, min(100, intval($input['limit']))) : 20;
+
+    $orderby = sanitize_key($input['orderby'] ?? 'date');
+    if (!in_array($orderby, array('date', 'modified', 'title'), true)) {
+        $orderby = 'date';
+    }
+    $order = strtoupper(sanitize_key($input['order'] ?? 'desc'));
+    if (!in_array($order, array('ASC', 'DESC'), true)) {
+        $order = 'DESC';
+    }
+
+    $args = array(
+        'post_type' => $post_type,
+        'post_status' => $post_status,
+        'posts_per_page' => $limit,
+        'orderby' => $orderby,
+        'order' => $order,
+        'no_found_rows' => false,
+    );
+    $search = sanitize_text_field($input['search'] ?? '');
+    if ($search !== '') {
+        $args['s'] = $search;
+    }
+
+    $wp_query = new WP_Query($args);
+    $items = array();
+    foreach ($wp_query->posts as $post) {
+        $items[] = array(
+            'postId' => intval($post->ID),
+            'postType' => $post->post_type,
+            'status' => $post->post_status,
+            'title' => get_the_title($post),
+            'slug' => $post->post_name,
+            'authorId' => intval($post->post_author),
+            'date' => get_post_datetime($post, 'date', 'gmt') ? get_post_datetime($post, 'date', 'gmt')->format(DATE_ATOM) : null,
+            'modified' => get_post_datetime($post, 'modified', 'gmt') ? get_post_datetime($post, 'modified', 'gmt')->format(DATE_ATOM) : null,
+            'link' => get_permalink($post),
+        );
+    }
+
+    return array(
+        'postType' => $post_type,
+        'totalCount' => intval($wp_query->found_posts),
+        'count' => count($items),
+        'items' => $items,
+    );
+}
+
+function faaaster_mcp_ability_list_media($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $limit = isset($input['limit']) ? max(1, min(100, intval($input['limit']))) : 20;
+
+    $args = array(
+        'post_type' => 'attachment',
+        'post_status' => 'inherit',
+        'posts_per_page' => $limit,
+        'orderby' => 'date',
+        'order' => 'DESC',
+        'no_found_rows' => false,
+    );
+    $mime = sanitize_text_field($input['mimeType'] ?? '');
+    if ($mime !== '') {
+        $args['post_mime_type'] = $mime;
+    }
+    $search = sanitize_text_field($input['search'] ?? '');
+    if ($search !== '') {
+        $args['s'] = $search;
+    }
+
+    $wp_query = new WP_Query($args);
+    $items = array();
+    foreach ($wp_query->posts as $post) {
+        $items[] = array(
+            'id' => intval($post->ID),
+            'title' => get_the_title($post),
+            'mimeType' => $post->post_mime_type,
+            'url' => wp_get_attachment_url($post->ID),
+            'date' => get_post_datetime($post, 'date', 'gmt') ? get_post_datetime($post, 'date', 'gmt')->format(DATE_ATOM) : null,
+        );
+    }
+
+    return array(
+        'totalCount' => intval($wp_query->found_posts),
+        'count' => count($items),
+        'items' => $items,
+    );
+}
+
+function faaaster_mcp_ability_list_users($input)
+{
+    // Enumerating users requires the real WP capability — caps CONTAIN this even
+    // though the generic ability gate is only edit_posts. A scoped editor gets 403.
+    if (!current_user_can('list_users')) {
+        return new WP_Error('rest_ability_forbidden', 'list_users capability required', array('status' => 403));
+    }
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $limit = isset($input['limit']) ? max(1, min(100, intval($input['limit']))) : 50;
+
+    $args = array('number' => $limit);
+    $role = sanitize_key($input['role'] ?? '');
+    if ($role !== '') {
+        $args['role'] = $role;
+    }
+    $search = sanitize_text_field($input['search'] ?? '');
+    if ($search !== '') {
+        $args['search'] = '*' . $search . '*';
+        $args['search_columns'] = array('user_login', 'display_name', 'user_nicename');
+    }
+
+    $users = get_users($args);
+    $items = array();
+    foreach ($users as $u) {
+        // id / name / slug / roles only — NO email, login or registration data:
+        // PII stays out of the model.
+        $items[] = array(
+            'id' => intval($u->ID),
+            'name' => $u->display_name,
+            'slug' => $u->user_nicename,
+            'roles' => array_values($u->roles),
+        );
+    }
+
+    return array('count' => count($items), 'items' => $items);
+}
+
+function faaaster_mcp_ability_list_taxonomy_terms($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $taxonomy = sanitize_key($input['taxonomy'] ?? 'category');
+    if (!in_array($taxonomy, array('category', 'post_tag'), true)) {
+        $taxonomy = 'category';
+    }
+    $limit = isset($input['limit']) ? max(1, min(200, intval($input['limit']))) : 50;
+
+    $args = array(
+        'taxonomy' => $taxonomy,
+        'number' => $limit,
+        'hide_empty' => false,
+        'orderby' => 'count',
+        'order' => 'DESC',
+    );
+    $search = sanitize_text_field($input['search'] ?? '');
+    if ($search !== '') {
+        $args['search'] = $search;
+    }
+
+    $terms = get_terms($args);
+    if (is_wp_error($terms)) {
+        return $terms;
+    }
+    $items = array();
+    foreach ($terms as $t) {
+        $items[] = array(
+            'id' => intval($t->term_id),
+            'name' => $t->name,
+            'slug' => $t->slug,
+            'count' => intval($t->count),
+        );
+    }
+
+    return array('taxonomy' => $taxonomy, 'count' => count($items), 'items' => $items);
+}
+
+function faaaster_mcp_ability_list_comments($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $status = sanitize_key($input['status'] ?? 'approve');
+    if (!in_array($status, array('approve', 'hold', 'spam', 'trash', 'all'), true)) {
+        $status = 'approve';
+    }
+    // Non-public statuses require moderation rights — caps contain this.
+    if ($status !== 'approve' && !current_user_can('moderate_comments')) {
+        return new WP_Error('rest_ability_forbidden', 'moderate_comments capability required for non-approved comments', array('status' => 403));
+    }
+    $limit = isset($input['limit']) ? max(1, min(100, intval($input['limit']))) : 20;
+
+    $args = array('number' => $limit, 'status' => $status);
+    $post_id = isset($input['postId']) ? absint($input['postId']) : 0;
+    if ($post_id) {
+        $args['post_id'] = $post_id;
+    }
+
+    $comments = get_comments($args);
+    $items = array();
+    foreach ($comments as $c) {
+        $content = (string) $c->comment_content;
+        if (strlen($content) > 500) {
+            $content = substr($content, 0, 500);
+        }
+        // author display name + content + status only — NO email or IP (PII).
+        $items[] = array(
+            'id' => intval($c->comment_ID),
+            'postId' => intval($c->comment_post_ID),
+            'author' => $c->comment_author,
+            'content' => $content,
+            'status' => wp_get_comment_status($c->comment_ID),
+            'date' => $c->comment_date_gmt ? mysql2date(DATE_ATOM, $c->comment_date_gmt, false) : null,
+        );
+    }
+
+    return array('status' => $status, 'count' => count($items), 'items' => $items);
+}
+
+function faaaster_mcp_ability_update_post($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $post_id = absint($input['id'] ?? 0);
+    if ($post_id <= 0) {
+        return new WP_Error('rest_ability_invalid_input', 'id is required', array('status' => 400));
+    }
+    $post = get_post($post_id);
+    if (!$post) {
+        return new WP_Error('rest_ability_not_found', 'Post not found', array('status' => 404));
+    }
+    // Per-object capability — the real boundary (the generic gate is only edit_posts).
+    if (!current_user_can('edit_post', $post_id)) {
+        return new WP_Error('rest_ability_forbidden', 'Not allowed to edit this post', array('status' => 403));
+    }
+
+    $update = array('ID' => $post_id);
+    if (isset($input['title'])) {
+        $update['post_title'] = sanitize_text_field($input['title']);
+    }
+    if (isset($input['content'])) {
+        $update['post_content'] = (string) $input['content'];
+    }
+    if (isset($input['excerpt'])) {
+        $update['post_excerpt'] = (string) $input['excerpt'];
+    }
+    if (isset($input['status'])) {
+        $status = sanitize_key($input['status']);
+        if (in_array($status, array('publish', 'draft', 'pending', 'private'), true)) {
+            if ($status === 'publish') {
+                // Publishing needs the post type's publish capability — contain it.
+                $pt = get_post_type_object($post->post_type);
+                $publish_cap = ($pt && isset($pt->cap->publish_posts)) ? $pt->cap->publish_posts : 'publish_posts';
+                if (!current_user_can($publish_cap)) {
+                    return new WP_Error('rest_ability_forbidden', 'Not allowed to publish', array('status' => 403));
+                }
+            }
+            $update['post_status'] = $status;
+        }
+    }
+    if (count($update) <= 1) {
+        return new WP_Error('rest_ability_invalid_input', 'No updatable fields provided', array('status' => 400));
+    }
+
+    $result = wp_update_post($update, true);
+    if (is_wp_error($result)) {
+        return $result;
+    }
+
+    update_post_meta($post_id, '_faaaster_agent_last_edited_by', get_current_user_id());
+
+    return array(
+        'postId' => intval($post_id),
+        'postType' => get_post_type($post_id),
+        'status' => get_post_status($post_id),
+        'title' => get_the_title($post_id),
+        'link' => get_permalink($post_id),
+        'editLink' => get_edit_post_link($post_id, 'raw'),
+    );
+}
+
+function faaaster_mcp_ability_moderate_comment($input)
+{
+    if (!is_array($input)) {
+        $input = array();
+    }
+    $comment_id = absint($input['id'] ?? 0);
+    $action = sanitize_key($input['action'] ?? '');
+    if ($comment_id <= 0 || !in_array($action, array('approve', 'hold', 'spam', 'trash'), true)) {
+        return new WP_Error('rest_ability_invalid_input', 'id and a valid action are required', array('status' => 400));
+    }
+    $comment = get_comment($comment_id);
+    if (!$comment) {
+        return new WP_Error('rest_ability_not_found', 'Comment not found', array('status' => 404));
+    }
+    // Per-object moderation capability — the real boundary.
+    if (!current_user_can('edit_comment', $comment_id)) {
+        return new WP_Error('rest_ability_forbidden', 'Not allowed to moderate this comment', array('status' => 403));
+    }
+
+    // wp_set_comment_status accepts approve | hold | spam | trash.
+    $ok = wp_set_comment_status($comment_id, $action, false);
+    if (!$ok) {
+        return new WP_Error('rest_ability_failed', 'Could not update comment status', array('status' => 500));
+    }
+
+    return array(
+        'id' => $comment_id,
+        'action' => $action,
+        'status' => wp_get_comment_status($comment_id),
     );
 }
 
