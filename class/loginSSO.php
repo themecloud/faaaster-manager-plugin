@@ -17,18 +17,32 @@ if (!defined('FAAASTER_API_BASE')) {
 
 class LoginSSO
 {
-    /** Next userinfo endpoint — validates the short signed JWT minted by /sso
-     * and returns { success, name }. Replaces the legacy OAUTH_GET_USER. */
+    /** Token-validation endpoint, auto-detected so a single image serves both
+     * fleets. Legacy v0 pods carry OAUTH_GET_USER (Symfony IdP) which validates
+     * the opaque implicit-flow token; v1 pods have no such constant and use Next
+     * /api/sso/userinfo to validate the short signed JWT. Both return the same
+     * { success, name } shape with the same `Authorization: Bearer` call, so
+     * only the URL differs. */
     private function userinfoUrl()
     {
+        if (defined('OAUTH_GET_USER') && OAUTH_GET_USER) {
+            return OAUTH_GET_USER;
+        }
         return rtrim(FAAASTER_API_BASE, '/') . '/api/sso/userinfo';
     }
 
     public function authorize($param)
     {
-        // No more static `state` check: the access_token is now a short signed
-        // JWT (verified by Next /api/sso/userinfo) — the signature + 90s expiry
-        // + instance audience replace the legacy implicit-flow state.
+        // Legacy v0 pods still use the static `state` check from the implicit
+        // flow (OAUTH_STATE defined via /app/.include/manager.php). v1 pods mint
+        // a short signed JWT (signature + 90s expiry + instance audience verified
+        // by Next), so no state is needed and the check is skipped there.
+        if (defined('OAUTH_STATE') && OAUTH_STATE) {
+            if (!isset($param['state']) || OAUTH_STATE !== $param['state']) {
+                exit;
+            }
+        }
+
         $access_token = $param['access_token'];
 
         setcookie('tc_token', $access_token, time() + $param['expires_in']);
@@ -92,7 +106,7 @@ class LoginSSO
             // redirect to err page
             header('Cache-Control: no-cache');
             header('Content-Type: text/html');
-            include("request/err.php");
+            include(__DIR__ . '/../request/err.php');
             exit;
         }
 
@@ -102,11 +116,11 @@ class LoginSSO
             // redirect to err page
             parse_str($_SERVER['QUERY_STRING'], $get_array);
 
-            $_GET["error_description"] = $get_array["error_description"];
+            $_GET["error_description"] = $get_array["error_description"] ?? '';
 
             header('Cache-Control: no-cache');
             header('Content-Type: text/html');
-            include("request/err.php");
+            include(__DIR__ . '/../request/err.php');
             exit;
         }
 

@@ -256,6 +256,13 @@ const FAAASTER_AGENT_USER_OPTION = 'faaaster_agent_ability_user';
 // paying a live plugin bootstrap on the discovery path.
 const FAAASTER_AGENT_CATALOG_OPTION = 'faaaster_agent_ability_catalog';
 
+// Cached REST surface catalogue (auto-derivation): the live /wp-json route index
+// (core + every plugin) compacted to {route, namespace, methods, endpoints[].args}.
+// The per-endpoint args ARE the agent-facing "how to call" doc (type/required/enum/
+// default/description) — authored by WordPress + each plugin, zero manual upkeep.
+// autoload=no (read only by the discovery route).
+const FAAASTER_AGENT_REST_CATALOG_OPTION = 'faaaster_agent_rest_catalog';
+
 /** The opt-in scoped user the agent runs abilities as. 0 = access NOT enabled
  *  (no get-or-create here — the user is created only by the owner opt-in below). */
 function faaaster_agent_ability_user_id()
@@ -284,6 +291,67 @@ function faaaster_agent_build_catalog()
     return $catalog;
 }
 
+/** Build the REST surface catalogue from the LIVE /wp-json index and cache it
+ *  (autoload=no). Per route: namespace, methods, and per-endpoint args (the param
+ *  schema — the agent's "how to call" doc). MUST run plugins-loaded (faaaster-agent
+ *  context) so plugin routes are present. This is the auto-derived tool surface —
+ *  WP + plugins author the schemas; we don't hand-maintain any of it. */
+function faaaster_agent_build_rest_catalog()
+{
+    $uid = faaaster_agent_ability_user_id();
+    if ($uid && get_current_user_id() !== $uid) {
+        wp_set_current_user($uid);
+    }
+    $resp   = rest_do_request(new WP_REST_Request('GET', '/'));
+    $data   = rest_get_server()->response_to_data($resp, false);
+    $routes = (is_array($data) && isset($data['routes']) && is_array($data['routes'])) ? $data['routes'] : array();
+
+    $out = array();
+    foreach ($routes as $route => $info) {
+        if (!is_array($info)) {
+            continue;
+        }
+        $namespace = isset($info['namespace']) ? (string) $info['namespace'] : '';
+        if ($namespace === '') {
+            continue; // skip the index/self + namespace-root meta routes
+        }
+        $endpoints = array();
+        if (isset($info['endpoints']) && is_array($info['endpoints'])) {
+            foreach ($info['endpoints'] as $ep) {
+                $methods = (isset($ep['methods']) && is_array($ep['methods'])) ? array_values($ep['methods']) : array();
+                $args    = array();
+                if (isset($ep['args']) && is_array($ep['args'])) {
+                    foreach ($ep['args'] as $arg_name => $arg_def) {
+                        if (!is_array($arg_def)) {
+                            continue;
+                        }
+                        // Keep only the agent-relevant schema bits (drop validate/
+                        // sanitize callbacks etc., which aren't JSON anyway).
+                        $kept = array();
+                        foreach (array('type', 'description', 'required', 'enum', 'default', 'items', 'format') as $k) {
+                            if (array_key_exists($k, $arg_def)) {
+                                $kept[$k] = $arg_def[$k];
+                            }
+                        }
+                        $args[$arg_name] = $kept;
+                    }
+                }
+                $endpoints[] = array('methods' => $methods, 'args' => $args);
+            }
+        }
+        $out[] = array(
+            'route'     => (string) $route,
+            'namespace' => $namespace,
+            'methods'   => (isset($info['methods']) && is_array($info['methods'])) ? array_values($info['methods']) : array(),
+            'endpoints' => $endpoints,
+        );
+    }
+
+    $catalog = array('data' => $out, 'builtAt' => time());
+    update_option(FAAASTER_AGENT_REST_CATALOG_OPTION, $catalog, false); // autoload=no
+    return $catalog;
+}
+
 function faaaster_agent_register_routes()
 {
     $localhost = array('permission_callback' => '__return_true'); // localhost-only (worker only)
@@ -299,12 +367,29 @@ function faaaster_agent_register_routes()
         'callback'            => 'faaaster_agent_rest_list',
         'permission_callback' => '__return_true',
     ));
+    // DISCOVERY (proxy-reachable): the cached REST surface catalogue (auto-derived
+    // tool surface). Same cheap cached-option read as list_abilities.
+    register_rest_route('hostmanager/v1', '/list_rest_routes', array(
+        'methods'             => WP_REST_Server::READABLE,
+        'callback'            => 'faaaster_agent_rest_routes_list',
+        'permission_callback' => '__return_true',
+    ));
 
     // EXECUTION (localhost-only): run as the opt-in scoped user, reached ONLY by
     // the in-pod worker over 127.0.0.1 — never the external proxy.
     register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost, array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_run',
+    )));
+    // Generalized REST proxy: run ANY WP REST route AS the opt-in scoped user
+    // (auto-derivation surface — wp/v2, wc/v3, any plugin route). The scoped user's
+    // CAPS are the real containment (rest_do_request honors each route's
+    // permission_callback). Read/write classification + per-namespace TOFU trust +
+    // write approval are decided UPSTREAM by the Next broker; here we execute +
+    // re-enforce a defensive `readOnly` guard. Localhost-only (worker only).
+    register_rest_route('faaaster-agent/v1', '/rest', array_merge($localhost, array(
+        'methods'  => WP_REST_Server::CREATABLE,
+        'callback' => 'faaaster_agent_rest_proxy',
     )));
     register_rest_route('faaaster-agent/v1', '/enable', array_merge($localhost, array(
         'methods'  => WP_REST_Server::CREATABLE,
@@ -332,6 +417,23 @@ function faaaster_agent_rest_list($request)
         'ok'        => true,
         'supported' => true,
         'builtAt'   => (is_array($catalog) && isset($catalog['builtAt'])) ? (int) $catalog['builtAt'] : null,
+        'data'      => $data,
+    ), 200);
+}
+
+/** Discovery (hostmanager/v1/list_rest_routes): the cached REST surface catalogue —
+ *  a single get_option, cheap even under skip-plugins. Built in plugins-loaded
+ *  contexts (enable / refresh ability). Returns { data, builtAt, count, supported }. */
+function faaaster_agent_rest_routes_list($request)
+{
+    $catalog = get_option(FAAASTER_AGENT_REST_CATALOG_OPTION, array());
+    $data    = (is_array($catalog) && isset($catalog['data']) && is_array($catalog['data'])) ? $catalog['data'] : array();
+    return new WP_REST_Response(array(
+        'code'      => 'ok',
+        'ok'        => true,
+        'supported' => true,
+        'builtAt'   => (is_array($catalog) && isset($catalog['builtAt'])) ? (int) $catalog['builtAt'] : null,
+        'count'     => count($data),
         'data'      => $data,
     ), 200);
 }
@@ -405,6 +507,61 @@ function faaaster_agent_rest_run($request)
     ), 200);
 }
 
+/** Generalized REST proxy — run a WP REST route AS the opt-in scoped user.
+ *  Body: { method, route, params?, body?, readOnly? }. Executes in-process via
+ *  rest_do_request, so each route's permission_callback runs against the scoped
+ *  user — its CAPS are the containment (an editor-scoped user can read/write posts
+ *  but not manage_options, install plugins, edit users, …). The Next broker decides
+ *  WHAT to call and whether a write needs approval / a namespace needs trust; this
+ *  only executes + re-enforces a defensive readOnly guard. */
+function faaaster_agent_rest_proxy($request)
+{
+    $params   = $request->get_json_params();
+    $method   = strtoupper(isset($params['method']) ? (string) $params['method'] : 'GET');
+    $route    = isset($params['route']) ? (string) $params['route'] : '';
+    $query    = (isset($params['params']) && is_array($params['params'])) ? $params['params'] : array();
+    $body     = $params['body'] ?? null;
+    $readOnly = !empty($params['readOnly']);
+
+    if (!in_array($method, array('GET', 'POST', 'PUT', 'PATCH', 'DELETE'), true)) {
+        return new WP_Error('invalid_request', 'Invalid method', array('status' => 400));
+    }
+    // Route must be a REST path: leading slash, /namespace/… charset.
+    if ($route === '' || $route[0] !== '/' || !preg_match('#^/[a-z0-9][a-z0-9._/-]*$#i', $route) || strpos($route, '..') !== false) {
+        return new WP_Error('invalid_request', 'Invalid route', array('status' => 400));
+    }
+    // Defense-in-depth: a read-scoped task can NEVER perform a write.
+    if ($readOnly && $method !== 'GET') {
+        return new WP_Error('rest_not_read_only', 'Route call is not read-only', array('status' => 403, 'method' => $method));
+    }
+
+    $uid = faaaster_agent_ability_user_id();
+    if (!$uid) {
+        return new WP_Error('ability_access_disabled', 'Agent ability access is not enabled for this site', array('status' => 403));
+    }
+    wp_set_current_user($uid);
+
+    $req = new WP_REST_Request($method, $route);
+    if (!empty($query)) {
+        $req->set_query_params($query);
+    }
+    if ($method !== 'GET' && $body !== null) {
+        $req->set_header('Content-Type', 'application/json');
+        $req->set_body_params(is_array($body) ? $body : array());
+        $req->set_body(wp_json_encode($body));
+    }
+    $resp = rest_do_request($req);
+
+    return new WP_REST_Response(array(
+        'ok'     => !$resp->is_error(),
+        'status' => $resp->get_status(),
+        'route'  => $route,
+        'method' => $method,
+        'ranAs'  => $uid,
+        'data'   => rest_get_server()->response_to_data($resp, false),
+    ), 200);
+}
+
 /** Owner opt-in: provision the scoped agent user (chosen displayName + scoped role).
  *  Creating this user IS the act of granting ability access. */
 function faaaster_agent_rest_enable($request)
@@ -439,14 +596,17 @@ function faaaster_agent_rest_enable($request)
         $id = (int) $id;
     }
     update_option(FAAASTER_AGENT_USER_OPTION, $id, false);
-    // Populate the discovery catalogue now — enable runs in a plugins-loaded
-    // context (faaaster-agent namespace), so client abilities are captured.
+    // Populate BOTH discovery catalogues now — enable runs in a plugins-loaded
+    // context (faaaster-agent namespace), so client abilities + plugin REST routes
+    // are captured.
     $catalog = faaaster_agent_build_catalog();
+    $rest    = faaaster_agent_build_rest_catalog();
     return new WP_REST_Response(array(
-        'ok'      => true,
-        'userId'  => $id,
-        'role'    => $role,
-        'catalog' => array('count' => count($catalog['data']), 'builtAt' => $catalog['builtAt']),
+        'ok'        => true,
+        'userId'    => $id,
+        'role'      => $role,
+        'catalog'   => array('count' => count($catalog['data']), 'builtAt' => $catalog['builtAt']),
+        'restRoutes' => array('count' => count($rest['data']), 'builtAt' => $rest['builtAt']),
     ), 200);
 }
 
@@ -455,7 +615,8 @@ function faaaster_agent_rest_disable($request)
 {
     $id = faaaster_agent_ability_user_id();
     delete_option(FAAASTER_AGENT_USER_OPTION);
-    delete_option(FAAASTER_AGENT_CATALOG_OPTION); // drop the cached catalogue too
+    delete_option(FAAASTER_AGENT_CATALOG_OPTION);      // drop the cached ability catalogue
+    delete_option(FAAASTER_AGENT_REST_CATALOG_OPTION); // and the REST surface catalogue
     if ($id) {
         require_once ABSPATH . 'wp-admin/includes/user.php';
         wp_delete_user($id);
@@ -759,9 +920,11 @@ function faaaster_mcp_ability_create_draft_post($input)
 function faaaster_mcp_ability_refresh_abilities($input)
 {
     $catalog = faaaster_agent_build_catalog();
+    $rest    = faaaster_agent_build_rest_catalog();
     return array(
-        'count'   => count($catalog['data']),
-        'builtAt' => $catalog['builtAt'],
+        'count'          => count($catalog['data']),
+        'builtAt'        => $catalog['builtAt'],
+        'restRouteCount' => count($rest['data']),
     );
 }
 
