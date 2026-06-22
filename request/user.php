@@ -89,7 +89,7 @@
                 <?php endif; ?>
             <?php foreach ($_SESSION["admins"] as $id => $admin) : ?>
 
-                <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/login" . "&user=" . $id ?>">
+                <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/authorize&access_token=" . urlencode($sso_token) . "&expires_in=3600&user=" . $id ?>">
                         <?php if($admin["gravatar"]){ ?>
                             <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
                         <?php }else{ ?>

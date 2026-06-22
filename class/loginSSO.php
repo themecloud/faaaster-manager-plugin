@@ -17,6 +17,13 @@ if (!defined('FAAASTER_API_BASE')) {
 
 class LoginSSO
 {
+    /** Access token of the current SSO request — captured in login() so the
+     * admin chooser (request/user.php) can carry it forward in its links and
+     * complete the login statelessly (no reliance on the session or tc_token
+     * cookie surviving the click — both are unreliable behind the fastcgi cache
+     * and cross-site SameSite rules). */
+    private $accessToken = '';
+
     /** v0/v1 discriminator. A v1 SSO token is a signed JWT (header.payload.sig);
      * legacy v0 tokens are opaque (no dots). Token SHAPE is the reliable signal —
      * NOT the presence of OAUTH_* constants: provisioning writes the legacy
@@ -41,7 +48,16 @@ class LoginSSO
 
     public function authorize($param)
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         $access_token = $param['access_token'];
+
+        // Record the SSO mode in the session so the (token-less) chooser
+        // round-trip — and any tokenless hit — knows this is a v1 pod even
+        // though OAUTH_* exist via the legacy manager.php.
+        $_SESSION['sso_is_jwt'] = $this->isJwt($access_token);
 
         // The legacy implicit-flow `state` check applies ONLY to opaque v0
         // tokens. v1 JWTs carry no `state` (signature + 90s exp + instance
@@ -54,7 +70,7 @@ class LoginSSO
             }
         }
 
-        setcookie('tc_token', $access_token, time() + $param['expires_in']);
+        setcookie('tc_token', $access_token, time() + ($param['expires_in'] ?? 3600));
 
         $loginResult = $this->login($access_token);
         return $loginResult;
@@ -62,16 +78,21 @@ class LoginSSO
 
     public function sso()
     {
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+
         if (!empty($_COOKIE['tc_token'])) {
             $loginResult = $this->login($_COOKIE['tc_token']);
             return $loginResult;
         }
 
-        // Legacy implicit-flow redirect to the Symfony IdP (only if still
-        // configured). v1 sites have no interactive authorize endpoint — the
-        // dashboard mints the token and hits /v1/authorize directly — so a
-        // tokenless direct hit just falls back to the standard WP login.
-        if (defined('OAUTH_ENDPOINT') && OAUTH_ENDPOINT && defined('OAUTH_STATE')) {
+        // Tokenless hit. Bounce to the legacy Symfony IdP ONLY for a genuine v0
+        // session (sso_is_jwt explicitly false). NEVER on v1 pods — they still
+        // define OAUTH_ENDPOINT via the legacy manager.php but must not use it.
+        // Unknown / v1 → standard WP login (always works).
+        if (isset($_SESSION['sso_is_jwt']) && $_SESSION['sso_is_jwt'] === false
+            && defined('OAUTH_ENDPOINT') && OAUTH_ENDPOINT && defined('OAUTH_STATE')) {
             $parameters = array(
                 'response_type' => 'token',
                 'client_id' => defined('OAUTH_CLIENT_ID') ? OAUTH_CLIENT_ID : '',
@@ -89,6 +110,7 @@ class LoginSSO
 
     public function login($token)
     {
+        $this->accessToken = $token;
 
         if (session_status() === PHP_SESSION_NONE) {
             session_start();
@@ -149,7 +171,13 @@ class LoginSSO
 
         $user_data = get_user_by('login', $username);
         if (isset($_GET['user'])) {
-            $user_data = get_userdata($_GET["user"]);
+            // the chosen id now travels in the chooser URL, so only honour it if
+            // it resolves to a real administrator — never log in as an arbitrary
+            // id passed by hand.
+            $candidate = get_userdata($_GET["user"]);
+            $user_data = ($candidate && in_array('administrator', (array) $candidate->roles, true))
+                ? $candidate
+                : false;
         }
 
         // no user found
@@ -166,6 +194,11 @@ class LoginSSO
 
                     $_SESSION["admins"] = $users;
                     $_SESSION["lang"] = get_locale();
+
+                    // the validated token, handed to the chooser template so its
+                    // links carry it back through /v1/authorize&user=<id> — the
+                    // login completes without depending on session/cookie state.
+                    $sso_token = $this->accessToken;
 
                     // redirect to choose a user
                     header('Cache-Control: no-cache');
