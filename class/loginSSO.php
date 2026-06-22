@@ -17,15 +17,23 @@ if (!defined('FAAASTER_API_BASE')) {
 
 class LoginSSO
 {
-    /** Token-validation endpoint, auto-detected so a single image serves both
-     * fleets. Legacy v0 pods carry OAUTH_GET_USER (Symfony IdP) which validates
-     * the opaque implicit-flow token; v1 pods have no such constant and use Next
-     * /api/sso/userinfo to validate the short signed JWT. Both return the same
-     * { success, name } shape with the same `Authorization: Bearer` call, so
-     * only the URL differs. */
-    private function userinfoUrl()
+    /** v0/v1 discriminator. A v1 SSO token is a signed JWT (header.payload.sig);
+     * legacy v0 tokens are opaque (no dots). Token SHAPE is the reliable signal —
+     * NOT the presence of OAUTH_* constants: provisioning writes the legacy
+     * /app/.include/manager.php (OAUTH_STATE, OAUTH_GET_USER) onto v1 pods too,
+     * so constant-presence would wrongly flag every v1 pod as legacy. */
+    private function isJwt($token)
     {
-        if (defined('OAUTH_GET_USER') && OAUTH_GET_USER) {
+        return substr_count((string) $token, '.') === 2;
+    }
+
+    /** Token-validation endpoint, chosen by token shape so a single image serves
+     * both fleets. Opaque v0 token (and legacy OAUTH_GET_USER present) → Symfony
+     * IdP; signed JWT → Next /api/sso/userinfo. Both answer { success, name } via
+     * the same `Authorization: Bearer` call, so only the URL differs. */
+    private function validateUrl($token)
+    {
+        if (!$this->isJwt($token) && defined('OAUTH_GET_USER') && OAUTH_GET_USER) {
             return OAUTH_GET_USER;
         }
         return rtrim(FAAASTER_API_BASE, '/') . '/api/sso/userinfo';
@@ -33,17 +41,18 @@ class LoginSSO
 
     public function authorize($param)
     {
-        // Legacy v0 pods still use the static `state` check from the implicit
-        // flow (OAUTH_STATE defined via /app/.include/manager.php). v1 pods mint
-        // a short signed JWT (signature + 90s expiry + instance audience verified
-        // by Next), so no state is needed and the check is skipped there.
-        if (defined('OAUTH_STATE') && OAUTH_STATE) {
+        $access_token = $param['access_token'];
+
+        // The legacy implicit-flow `state` check applies ONLY to opaque v0
+        // tokens. v1 JWTs carry no `state` (signature + 90s exp + instance
+        // audience replace it), and v1 pods STILL define OAUTH_STATE via the
+        // legacy manager.php — so gate on the token being opaque, not on the
+        // constant existing, otherwise every v1 login exits here.
+        if (!$this->isJwt($access_token) && defined('OAUTH_STATE') && OAUTH_STATE) {
             if (!isset($param['state']) || OAUTH_STATE !== $param['state']) {
                 exit;
             }
         }
-
-        $access_token = $param['access_token'];
 
         setcookie('tc_token', $access_token, time() + $param['expires_in']);
 
@@ -87,7 +96,7 @@ class LoginSSO
 
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
-        $conn = curl_init($this->userinfoUrl());
+        $conn = curl_init($this->validateUrl($token));
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($conn, CURLOPT_HTTPHEADER, array(
@@ -216,7 +225,7 @@ class LoginSSO
 
     public function verifyTCToken($token)
     {
-        $conn = curl_init($this->userinfoUrl());
+        $conn = curl_init($this->validateUrl($token));
 
         curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($conn, CURLOPT_HTTPHEADER, array(
