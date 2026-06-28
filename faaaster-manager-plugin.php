@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.11.3.5
+ * Version: 0.11.3.6
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -28,6 +28,17 @@ $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_ke
 
 $faaaster_api_base = defined('CUSTOM_FAAASTER_API_BASE') ? CUSTOM_FAAASTER_API_BASE : 'https://app.faaaster.io';
 define('FAAASTER_API_BASE', $faaaster_api_base);
+
+// Version du plugin, DÉRIVÉE de l'en-tête (zéro drift avec « Version: » ci-dessus).
+// Exposée en HTTP via hostmanager/v1/manager_version → le dashboard détecte les
+// capacités du plugin RÉELLEMENT en place (ex: SSO JWT) sans se fier à une
+// métadonnée de registre périmée. cf. class/mcp-abilities.php.
+if (!defined('FAAASTER_MANAGER_VERSION')) {
+    $faaaster_plugin_meta = function_exists('get_file_data')
+        ? get_file_data(__FILE__, array('Version' => 'Version'))
+        : array('Version' => '0');
+    define('FAAASTER_MANAGER_VERSION', $faaaster_plugin_meta['Version'] ?: '0');
+}
 
 
 // Initialize error handling as early as possible
@@ -136,27 +147,40 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
     curl_close($ch);
 }
 
+/**
+ * HARD FLUSH — « tout vider » DÉLIBÉRÉ. Appelé UNIQUEMENT par l'endpoint REST manuel
+ * (faaaster_clear_cache : bouton « Vider le cache » de l'UI Faaaster / déploiement).
+ *
+ * C'est le SEUL endroit qui reset l'opcache + vide l'object cache, car ce sont des
+ * caches de CODE. Un vidage de PAGES automatique (hooks contenu/RUCSS/WP Rocket) ne doit
+ * JAMAIS les toucher : le reset opcache en boucle recompile 23k+ fichiers sous charge →
+ * corruption (fatales croisées entre plugins). Comme c'est manuel et rare, le reset est
+ * sûr ici (pas de storm). PAS de coalescing : l'utilisateur a cliqué, il veut maintenant.
+ */
 function faaaster_manager_clear_all_cache()
 {
     global $cfcache_enabled, $cloudflare;
 
-    // OP Cache
-    opcache_reset();
+    // 1) Pages (FastCGI) : délègue au cache-manager — SOURCE UNIQUE, forcé (immédiat).
+    if (class_exists('rt_wp_nginx_helper') && method_exists(rt_wp_nginx_helper()->purge, 'purge_all')) {
+        rt_wp_nginx_helper()->purge->purge_all(true);
+    } else {
+        faaaster_manager_do_remote_get("http://localhost/purge-all"); // fallback
+    }
 
-    // New Method fcgi
-    $_url_purge = "http://localhost/purge-all";
-    faaaster_manager_do_remote_get($_url_purge);
+    // 2) Object cache (APCu/Redis) — caches de CODE/données, vidés délibérément ici.
+    wp_cache_flush();
 
-    // Pagespeed
+    // 3) Opcache (bytecode) — délibéré, rare → sûr (pas de storm).
+    if (function_exists('opcache_reset')) {
+        opcache_reset();
+    }
+
+    // 4) Pagespeed + Cloudflare
     touch('/tmp/pagespeed/cache.flush');
-
-    // Cloudflare
     if (APP_ID && WP_API_KEY && BRANCH && $cfcache_enabled == "true") {
         $cloudflare->purgeAll();
     }
-
-    // Cache objet WordPress
-    wp_cache_flush();
 }
 
 function faaaster_toggle_mu_plugin($request)

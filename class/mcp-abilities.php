@@ -514,6 +514,18 @@ function faaaster_agent_register_routes()
         'permission_callback' => '__return_true',
     ));
 
+    // CAPABILITY (proxy-reachable): version du manager-plugin + capacités
+    // dérivées. Volontairement TRIVIALE (aucune énumération WP/plugins, juste des
+    // constantes) → rapide, à l'inverse de site_state. Le dashboard la lit au
+    // moment du SSO pour décider le mode (JWT vs opaque legacy) d'après le plugin
+    // RÉELLEMENT en place : un 200 + `ssoJwt:true` ⟹ JWT ; un 404 (vieux plugin
+    // sans cette route) ⟹ repli opaque. cf. Next sso/index.ts.
+    register_rest_route('hostmanager/v1', '/manager_version', array(
+        'methods'             => WP_REST_Server::READABLE,
+        'callback'            => 'faaaster_manager_version',
+        'permission_callback' => '__return_true',
+    ));
+
     // EXECUTION (localhost-only): run as the opt-in scoped user, reached ONLY by
     // the in-pod worker over 127.0.0.1 — never the external proxy.
     register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost, array(
@@ -540,6 +552,23 @@ function faaaster_agent_register_routes()
     )));
 }
 add_action('rest_api_init', 'faaaster_agent_register_routes');
+
+/**
+ * hostmanager/v1/manager_version — sonde de capacité LÉGÈRE. Renvoie la version du
+ * manager-plugin + des flags de capacité. `ssoJwt` est true sur tout build qui
+ * embarque le loginSSO JWT-aware (celui-ci le fait) → le dashboard mint un token
+ * SSO JWT signé ; l'ABSENCE de cette route (404 sur un vieux plugin) → repli sur
+ * le token opaque legacy. Aucune énumération WP/plugins → instantané.
+ */
+function faaaster_manager_version()
+{
+    return array(
+        'version'      => defined('FAAASTER_MANAGER_VERSION') ? FAAASTER_MANAGER_VERSION : '0',
+        'capabilities' => array(
+            'ssoJwt' => true,
+        ),
+    );
+}
 
 /** Discovery (served under hostmanager/v1/list_abilities): returns the CACHED
  *  catalogue (core + Faaaster + client-plugin abilities) — a single get_option, so

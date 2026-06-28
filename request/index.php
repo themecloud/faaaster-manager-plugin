@@ -2,6 +2,13 @@
 
 require_once(__DIR__ . '/../class/loginSSO.php');
 
+// SSO URLs carry the short-lived token in the query string (authorize + the
+// chooser links). Suppress the Referer so it can't leak to third parties or
+// sub-resources loaded from these pages.
+if (!headers_sent()) {
+    header('Referrer-Policy: no-referrer');
+}
+
 
 function hostmanager_response($data)
 {

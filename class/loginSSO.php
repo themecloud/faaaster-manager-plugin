@@ -70,7 +70,19 @@ class LoginSSO
             }
         }
 
-        setcookie('tc_token', $access_token, time() + ($param['expires_in'] ?? 3600));
+        // Harden the cookie that carries the JWT: HttpOnly (no JS access),
+        // Secure on TLS, SameSite=Lax (still set on the cross-site top-level
+        // navigation from the dashboard, sent on same-site hits only).
+        $secure = function_exists('is_ssl')
+            ? is_ssl()
+            : (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off');
+        setcookie('tc_token', $access_token, array(
+            'expires'  => time() + ($param['expires_in'] ?? 3600),
+            'path'     => '/',
+            'secure'   => $secure,
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ));
 
         $loginResult = $this->login($access_token);
         return $loginResult;
