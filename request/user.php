@@ -89,7 +89,10 @@
                 <?php endif; ?>
             <?php foreach ($_SESSION["admins"] as $id => $admin) : ?>
 
-                <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/authorize&access_token=" . urlencode($sso_token) . "&expires_in=3600&user=" . $id ?>">
+                <a class="user-block" href="<?php echo "/?rest_route=/sso/v1/login&x-action=/v1/authorize&access_token=" . urlencode($sso_token) . "&expires_in=3600&user=" . $id
+                    // legacy v0 (token opaque) : authorize() ré-exige `state`
+                    // au retour du chooser — sans lui, exit → page blanche.
+                    . ((defined('OAUTH_STATE') && OAUTH_STATE) ? "&state=" . urlencode(OAUTH_STATE) : "") ?>">
                         <?php if($admin["gravatar"]){ ?>
                             <span class="user-image"><?php echo $admin["gravatar"]; ?></span>
                         <?php }else{ ?>

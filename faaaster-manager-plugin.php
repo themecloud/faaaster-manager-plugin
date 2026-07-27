@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.11.3.6
+ * Version: 0.11.3.7
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
