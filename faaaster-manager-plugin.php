@@ -518,7 +518,9 @@ function faaaster_get_resources($request)
     }
 
     try {
-        $metrics_lib = '/app/www/php/_tc/lib/resource-metrics.php';
+        // The wp-builder images ship the lib at /php/_tc/lib (Dockerfile: COPY php /php),
+        // at the container root — never inside the client webroot /app/www.
+        $metrics_lib = '/php/_tc/lib/resource-metrics.php';
         if (!file_exists($metrics_lib)) {
             return new WP_REST_Response(['code' => 'not_available', 'message' => 'Resource metrics library not found'], 500);
         }
