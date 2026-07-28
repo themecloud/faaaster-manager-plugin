@@ -94,6 +94,7 @@ require_once(__DIR__ . '/class/site-state.php');
 require_once(__DIR__ . '/class/mu-plugin-manager.php');
 require_once(__DIR__ . '/class/loginSSO.php');
 require_once(__DIR__ . '/class/cloudflare-manager.php');
+require_once(__DIR__ . '/class/managed-cron-manager.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
@@ -108,8 +109,11 @@ $themeUpgrader = new ThemeUpgrade();
 $coreUpgrader = new CoreUpgrade();
 $eventManager = new FaaasterEventManager($app_id, $branch, $wp_api_key, $faaaster_api_base);
 
+$managedCronManager = new FaaasterManagedCronManager();
+
 $cloudflare->init();
 $eventManager->init();
+$managedCronManager->init();
 
 
 function faaaster_get_check()
