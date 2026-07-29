@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.11.3.9
+ * Version: 0.11.3.10
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -95,6 +95,7 @@ require_once(__DIR__ . '/class/mu-plugin-manager.php');
 require_once(__DIR__ . '/class/loginSSO.php');
 require_once(__DIR__ . '/class/cloudflare-manager.php');
 require_once(__DIR__ . '/class/managed-cron-manager.php');
+require_once(__DIR__ . '/class/auth-cookie.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
@@ -110,10 +111,12 @@ $coreUpgrader = new CoreUpgrade();
 $eventManager = new FaaasterEventManager($app_id, $branch, $wp_api_key, $faaaster_api_base);
 
 $managedCronManager = new FaaasterManagedCronManager();
+$authCookieManager = new FaaasterAuthCookieManager();
 
 $cloudflare->init();
 $eventManager->init();
 $managedCronManager->init();
+$authCookieManager->init();
 
 
 function faaaster_get_check()
