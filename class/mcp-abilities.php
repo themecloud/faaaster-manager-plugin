@@ -402,7 +402,7 @@ const FAAASTER_AGENT_CATALOG_OPTION = 'faaaster_agent_ability_catalog';
 // autoload=no (read only by the discovery route).
 const FAAASTER_AGENT_REST_CATALOG_OPTION = 'faaaster_agent_rest_catalog';
 
-/** The opt-in scoped user the agent runs abilities as. 0 = access NOT enabled
+/** The global administrator used for complete agent reads. 0 = access NOT enabled
  *  (no get-or-create here — the user is created only by the owner opt-in below). */
 function faaaster_agent_ability_user_id()
 {
@@ -513,6 +513,13 @@ function faaaster_agent_register_routes()
         'callback'            => 'faaaster_agent_rest_routes_list',
         'permission_callback' => '__return_true',
     ));
+    // Per-user execution binding discovery. The hostmanager bridge authenticates
+    // the Faaaster caller; only bounded non-sensitive fields leave WordPress.
+    register_rest_route('hostmanager/v1', '/list_agent_users', array(
+        'methods'             => WP_REST_Server::READABLE,
+        'callback'            => 'faaaster_agent_rest_users_list',
+        'permission_callback' => 'faaaster_agent_hostmanager_permission',
+    ));
 
     // CAPABILITY (proxy-reachable): version du manager-plugin + capacités
     // dérivées. Volontairement TRIVIALE (aucune énumération WP/plugins, juste des
@@ -526,16 +533,17 @@ function faaaster_agent_register_routes()
         'permission_callback' => '__return_true',
     ));
 
-    // EXECUTION (localhost-only): run as the opt-in scoped user, reached ONLY by
-    // the in-pod worker over 127.0.0.1 — never the external proxy.
+    // EXECUTION (localhost-only): reads use the global administrator; mutations
+    // require an explicit per-request WordPress user. Reached ONLY by the in-pod
+    // worker over 127.0.0.1 — never the external proxy.
     register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost, array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_run',
     )));
-    // Generalized REST proxy: run ANY WP REST route AS the opt-in scoped user
-    // (auto-derivation surface — wp/v2, wc/v3, any plugin route). The scoped user's
-    // CAPS are the real containment (rest_do_request honors each route's
-    // permission_callback). Read/write classification + per-namespace TOFU trust +
+    // Generalized REST proxy: run ANY WP REST route as the identity selected by
+    // the read/write split (auto-derivation surface — wp/v2, wc/v3, any plugin
+    // route). WordPress capabilities remain the final containment through each
+    // route's permission_callback. Read/write classification + namespace trust +
     // write approval are decided UPSTREAM by the Next broker; here we execute +
     // re-enforce a defensive `readOnly` guard. Localhost-only (worker only).
     register_rest_route('faaaster-agent/v1', '/rest', array_merge($localhost, array(
@@ -606,7 +614,116 @@ function faaaster_agent_rest_routes_list($request)
     ), 200);
 }
 
-/** Run an ability AS the opt-in scoped user, via the core /run route.
+/** Unlike cached, non-personal catalogues, the user list is never public. */
+function faaaster_agent_hostmanager_permission($request)
+{
+    $expected = defined('WP_API_KEY') ? (string) WP_API_KEY : '';
+    $header   = (string) $request->get_header('Authorization');
+    $token    = '';
+    if ($header !== '' && preg_match('/^Bearer\s+(.+)$/i', $header, $matches)) {
+        $token = trim((string) $matches[1]);
+    }
+    if ($expected === '' || $token === '' || !hash_equals($expected, $token)) {
+        return new WP_Error('agent_user_list_forbidden', 'Invalid or missing hostmanager credential', array('status' => 403));
+    }
+    return true;
+}
+
+/** List WordPress execution identities for one exact role. Administrators are
+ *  the default. Logins and emails are deliberately never returned. */
+function faaaster_agent_rest_users_list($request)
+{
+    $roles_object = wp_roles();
+    $roles        = is_object($roles_object) ? (array) $roles_object->roles : array();
+    $counts       = count_users();
+    $role_counts  = isset($counts['avail_roles']) && is_array($counts['avail_roles']) ? $counts['avail_roles'] : array();
+    $role         = sanitize_key((string) ($request->get_param('role') ?: 'administrator'));
+    $read_id      = faaaster_agent_ability_user_id();
+    $read_user    = $read_id > 0 ? get_user_by('id', $read_id) : false;
+    $read_valid   = $read_user && in_array('administrator', (array) $read_user->roles, true) && user_can($read_user, 'read');
+
+    if ($role === '' || !isset($roles[$role])) {
+        return new WP_Error('invalid_agent_user_role', 'Unknown WordPress role', array('status' => 400));
+    }
+
+    $users = get_users(array(
+        'role'    => $role,
+        'orderby' => 'ID',
+        'order'   => 'ASC',
+        'number'  => 100,
+    ));
+    $data = array();
+    foreach ($users as $user) {
+        if (!user_can($user, 'read')) {
+            continue;
+        }
+        $data[] = array(
+            'id'          => (int) $user->ID,
+            'displayName' => (string) $user->display_name,
+            'roles'       => array_values(array_map('sanitize_key', (array) $user->roles)),
+        );
+    }
+
+    $available_roles = array();
+    foreach ($roles as $slug => $definition) {
+        $count = isset($role_counts[$slug]) ? (int) $role_counts[$slug] : 0;
+        if ($count < 1) {
+            continue;
+        }
+        $available_roles[] = array(
+            'slug'  => sanitize_key((string) $slug),
+            'name'  => translate_user_role((string) ($definition['name'] ?? $slug)),
+            'count' => $count,
+        );
+    }
+
+    return new WP_REST_Response(array(
+        'code'           => 'ok',
+        'ok'             => true,
+        'supported'      => true,
+        'role'           => $role,
+        'users'          => $data,
+        'availableRoles' => $available_roles,
+        'readIdentity'    => array(
+            'configured' => (bool) $read_user,
+            'valid'      => (bool) $read_valid,
+            'userId'     => $read_user ? (int) $read_user->ID : null,
+            'displayName' => $read_user ? (string) $read_user->display_name : null,
+            'role'       => $read_valid ? 'administrator' : null,
+        ),
+        'truncated'      => count($data) >= 100,
+    ), 200);
+}
+
+/** Global READ identity. It must remain a WordPress administrator so inventories
+ *  include private/restricted content. It is never accepted by a mutation path. */
+function faaaster_agent_read_user_id()
+{
+    $requested = faaaster_agent_ability_user_id();
+    $user      = $requested > 0 ? get_user_by('id', $requested) : false;
+    if (!$user) {
+        return new WP_Error('agent_read_user_required', 'The global WordPress read identity is not configured', array('status' => 409));
+    }
+    if (!in_array('administrator', (array) $user->roles, true) || !user_can($user, 'read')) {
+        return new WP_Error('agent_read_user_not_administrator', 'The global WordPress read identity must be an administrator', array('status' => 409));
+    }
+    return $requested;
+}
+
+/** Per-request MUTATION identity. Both fields are mandatory; no fallback to the
+ *  global read administrator is allowed. */
+function faaaster_agent_mutation_user_id($params)
+{
+    $requested = isset($params['wordpressUserId']) ? (int) $params['wordpressUserId'] : 0;
+    $role      = isset($params['wordpressUserRole']) ? sanitize_key((string) $params['wordpressUserRole']) : '';
+    $user      = $requested > 0 ? get_user_by('id', $requested) : false;
+    if (!$user || $role === '' || !in_array($role, (array) $user->roles, true) || !user_can($user, 'read')) {
+        return new WP_Error('agent_mutation_user_required', 'A valid explicit WordPress mutation user must be selected', array('status' => 409));
+    }
+    return $requested;
+}
+
+/** Run an ability AS the selected execution user, via the core /run route.
  *  Body: { name, input }. Method follows the annotation (readonly→GET / mutation→POST);
  *  input is passed under the `input` object param (core contract). */
 function faaaster_agent_rest_run($request)
@@ -621,12 +738,6 @@ function faaaster_agent_rest_run($request)
         return new WP_Error('invalid_request', 'Invalid ability name', array('status' => 400));
     }
 
-    $uid = faaaster_agent_ability_user_id();
-    if (!$uid) {
-        return new WP_Error('ability_access_disabled', 'Agent ability access is not enabled for this site', array('status' => 403));
-    }
-    wp_set_current_user($uid);
-
     $ability = function_exists('wp_get_ability') ? wp_get_ability($name) : null;
     if (!$ability) {
         return new WP_Error('rest_ability_not_found', 'Ability not found', array('status' => 404));
@@ -640,6 +751,16 @@ function faaaster_agent_rest_run($request)
     if (!empty($params['readonlyOnly']) && !$readonly) {
         return new WP_Error('ability_not_readonly', 'Ability is not read-only', array('status' => 403));
     }
+
+    // Catalogue refresh is a bounded technical support operation for discovery;
+    // ordinary mutations always require the explicit per-user binding.
+    $uid = ($readonly || $name === 'faaaster-mcp/wp-refresh-abilities')
+        ? faaaster_agent_read_user_id()
+        : faaaster_agent_mutation_user_id($params);
+    if (is_wp_error($uid)) {
+        return $uid;
+    }
+    wp_set_current_user($uid);
 
     $req = new WP_REST_Request($readonly ? 'GET' : 'POST', '/wp-abilities/v1/abilities/' . $name . '/run');
     // Core requires `input` to ALWAYS be an object param (even for no-input abilities,
@@ -675,11 +796,11 @@ function faaaster_agent_rest_run($request)
     ), 200);
 }
 
-/** Generalized REST proxy — run a WP REST route AS the opt-in scoped user.
+/** Generalized REST proxy — run a WP REST route as the global read administrator
+ *  for readOnly tasks, or as the explicit per-user identity for mutations.
  *  Body: { method, route, params?, body?, readOnly? }. Executes in-process via
- *  rest_do_request, so each route's permission_callback runs against the scoped
- *  user — its CAPS are the containment (an editor-scoped user can read/write posts
- *  but not manage_options, install plugins, edit users, …). The Next broker decides
+ *  rest_do_request, so each route's permission_callback runs against that user.
+ *  The Next broker decides
  *  WHAT to call and whether a write needs approval / a namespace needs trust; this
  *  only executes + re-enforces a defensive readOnly guard. */
 function faaaster_agent_rest_proxy($request)
@@ -723,9 +844,11 @@ function faaaster_agent_rest_proxy($request)
         }
     }
 
-    $uid = faaaster_agent_ability_user_id();
-    if (!$uid) {
-        return new WP_Error('ability_access_disabled', 'Agent ability access is not enabled for this site', array('status' => 403));
+    $uid = $readOnly
+        ? faaaster_agent_read_user_id()
+        : faaaster_agent_mutation_user_id($params);
+    if (is_wp_error($uid)) {
+        return $uid;
     }
     wp_set_current_user($uid);
 
@@ -750,27 +873,35 @@ function faaaster_agent_rest_proxy($request)
     ), 200);
 }
 
-/** Owner opt-in: provision the scoped agent user (chosen displayName + scoped role).
- *  Creating this user IS the act of granting ability access. */
+/** Owner opt-in: provision or promote the global READ identity as administrator.
+ *  Creating/promoting this user is the explicit act of granting complete reads;
+ *  mutation execution never consumes this option. */
 function faaaster_agent_rest_enable($request)
 {
     $existing = faaaster_agent_ability_user_id();
     if ($existing) {
-        return new WP_REST_Response(array('ok' => true, 'userId' => $existing, 'already' => true), 200);
+        $user = get_user_by('id', $existing);
+        if ($user && !in_array('administrator', (array) $user->roles, true)) {
+            $updated = wp_update_user(array('ID' => $existing, 'role' => 'administrator'));
+            if (is_wp_error($updated)) {
+                return $updated;
+            }
+        }
+        return new WP_REST_Response(array('ok' => true, 'userId' => $existing, 'role' => 'administrator', 'already' => true), 200);
     }
 
     $params = $request->get_json_params();
     $name   = isset($params['displayName']) ? sanitize_text_field($params['displayName']) : 'Faaaster Agent';
-    $role   = isset($params['role']) ? sanitize_key($params['role']) : 'editor';
-    if (!get_role($role)) {
-        $role = 'editor';
-    }
+    $role   = 'administrator';
 
     $login = 'faaaster-agent';
     $user  = get_user_by('login', $login);
     if ($user) {
         $id = (int) $user->ID;
-        wp_update_user(array('ID' => $id, 'display_name' => $name, 'role' => $role));
+        $updated = wp_update_user(array('ID' => $id, 'display_name' => $name, 'role' => $role));
+        if (is_wp_error($updated)) {
+            return $updated;
+        }
     } else {
         $id = wp_insert_user(array(
             'user_login'   => $login,
