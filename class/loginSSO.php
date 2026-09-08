@@ -130,32 +130,11 @@ class LoginSSO
 
         require_once ABSPATH . 'wp-includes/pluggable.php';
 
-        $conn = curl_init($this->validateUrl($token));
-
-        curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($conn, CURLOPT_HTTPHEADER, array(
-            'Authorization: Bearer ' . $token
-        ));
-
-        $result = curl_exec($conn);
-
-        if (PHP_VERSION_ID < 80000) {
-            curl_close($conn);
-        }
+        $json = $this->fetchUserinfo($token);
 
         $_SESSION["lang"] = get_locale();
 
-        if ($result === false) {
-            // redirect to err page
-            header('Cache-Control: no-cache');
-            header('Content-Type: text/html');
-            include(__DIR__ . '/../request/err.php');
-            exit;
-        }
-
-        $json = json_decode($result, true);
-
-        if ($json['success'] != true) {
+        if ($json === null || empty($json['success'])) {
             // redirect to err page
             parse_str($_SERVER['QUERY_STRING'], $get_array);
 
@@ -270,29 +249,72 @@ class LoginSSO
 
     public function verifyTCToken($token)
     {
-        $conn = curl_init($this->validateUrl($token));
+        $json = $this->fetchUserinfo($token);
 
-        curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($conn, CURLOPT_HTTPHEADER, array(
-            'Authorization: Bearer ' . $token
-        ));
+        return $json !== null && !empty($json['success']);
+    }
 
-        $result = curl_exec($conn);
+    /** Token-validation call shared by login() and verifyTCToken(): GET the
+     * userinfo URL with `Authorization: Bearer`, expect `{ success, name }`.
+     *
+     * Returns the decoded JSON array, or null when nothing usable came back —
+     * after ONE retry. The pod sometimes receives an HTTP answer that is not our
+     * JSON (empty or HTML body, never seen in Vercel's runtime logs — inst93438
+     * on 2026-09-08, and ~30 pods fleet-wide since late August): a single blip
+     * used to bounce the user to err.php. Every unusable answer is logged with
+     * what actually came back (status, upstream IP, content-type, curl error,
+     * body excerpt — never the token) so the next case is diagnosable; the old
+     * code discarded the body. Timeouts keep a wedged upstream from pinning a
+     * php-fpm worker: PHP curl defaults to none. */
+    private function fetchUserinfo($token)
+    {
+        $url = $this->validateUrl($token);
+        $attempts = 2;
 
-        if (PHP_VERSION_ID < 80000) {
-            curl_close($conn);
+        for ($attempt = 1; $attempt <= $attempts; $attempt++) {
+            $conn = curl_init($url);
+
+            curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($conn, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($conn, CURLOPT_TIMEOUT, 10);
+            curl_setopt($conn, CURLOPT_HTTPHEADER, array(
+                'Authorization: Bearer ' . $token,
+                'Accept: application/json',
+                'User-Agent: faaaster-manager-plugin/'
+                    . (defined('FAAASTER_MANAGER_VERSION') ? FAAASTER_MANAGER_VERSION : '0'),
+            ));
+
+            $result = curl_exec($conn);
+            $status = (int) curl_getinfo($conn, CURLINFO_HTTP_CODE);
+            $contentType = (string) curl_getinfo($conn, CURLINFO_CONTENT_TYPE);
+            $upstreamIp = (string) curl_getinfo($conn, CURLINFO_PRIMARY_IP);
+            $curlError = curl_error($conn);
+
+            if (PHP_VERSION_ID < 80000) {
+                curl_close($conn);
+            }
+
+            $json = is_string($result) ? json_decode($result, true) : null;
+            if (is_array($json) && array_key_exists('success', $json)) {
+                return $json;
+            }
+
+            error_log(sprintf(
+                'faaaster-sso: userinfo attempt %d/%d unusable — http=%d ip=%s content-type=%s curl=%s body=%s',
+                $attempt,
+                $attempts,
+                $status,
+                $upstreamIp === '' ? '-' : $upstreamIp,
+                $contentType === '' ? '-' : $contentType,
+                $curlError === '' ? '-' : $curlError,
+                $result === false ? 'false' : json_encode(substr((string) $result, 0, 300))
+            ));
+
+            if ($attempt < $attempts) {
+                usleep(500000);
+            }
         }
 
-        if ($result === false) {
-            return false;
-        }
-
-        $json = json_decode($result, true);
-
-        if ($json['success'] != true) {
-            return false;
-        }
-
-        return true;
+        return null;
     }
 }
