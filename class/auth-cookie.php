@@ -8,11 +8,14 @@ final class FaaasterAuthCookieManager
 {
     public const COOKIE_NAME = 'fstr_auth';
     public const VERSION = 'v1';
-    public const TTL_SECONDS = 300;
+    public const TTL_SECONDS = 1800;
+    public const RENEW_BEFORE_SECONDS = 900;
 
     public function init()
     {
         add_action('send_headers', array($this, 'refresh'));
+        add_action('admin_init', array($this, 'refresh'));
+        add_filter('rest_post_dispatch', array($this, 'refreshRestResponse'));
         add_action('clear_auth_cookie', array($this, 'clear'));
     }
 
@@ -47,10 +50,34 @@ final class FaaasterAuthCookieManager
         }
 
         $level = current_user_can('manage_options') ? 'admin' : 'editor';
-        $expiresAt = time() + self::TTL_SECONDS;
-        $token = self::buildToken($key, get_current_user_id(), $level, $expiresAt);
+        $userId = get_current_user_id();
+        $now = time();
+        $existing = $_COOKIE[self::COOKIE_NAME] ?? '';
+        if (is_string($existing) && strlen($existing) <= 192) {
+            $parts = explode('.', $existing);
+            if (count($parts) === 5 && ctype_digit($parts[3])) {
+                $expiresAt = (int) $parts[3];
+                if ($expiresAt >= $now + self::RENEW_BEFORE_SECONDS
+                    && $expiresAt <= $now + self::TTL_SECONDS
+                    && hash_equals(self::buildToken($key, $userId, $level, $expiresAt), $existing)) {
+                    return;
+                }
+            }
+        }
+        $expiresAt = $now + self::TTL_SECONDS;
+        $token = self::buildToken($key, $userId, $level, $expiresAt);
 
         setcookie(self::COOKIE_NAME, $token, $this->cookieOptions($expiresAt));
+    }
+
+    public function refreshRestResponse($response)
+    {
+        // REST authentication (including the cookie nonce) and permissions have
+        // already run. Never grant a proof from a rejected REST request.
+        if (!is_wp_error($response) && $response->get_status() < 400) {
+            $this->refresh();
+        }
+        return $response;
     }
 
     public function clear()
