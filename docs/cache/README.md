@@ -1,0 +1,92 @@
+# Module cache de pages
+
+Pilote unique du cache de pages d'un site Faaaster : purge du cache **nginx FastCGI** du pod et de **Cloudflare** (via Next), TTL par contexte, intégrations. Il remplace le mu-plugin `faaaster-cache-manager` (fork de Nginx Helper) et `faaaster-wp-rocket.php` de wp-builder.
+
+Ce qu'il ne fait **pas** : pas de cache PHP, pas de drop-in `advanced-cache.php`, aucune écriture dans `/app/conf`, aucun rechargement de nginx depuis PHP. Les exclusions, cookies et durées par défaut restent dans les fichiers `conf` du site (centre d'aide).
+
+Hooks et mesures vérifiés dans les sources et sur un site réel : [hooks-verified.md](hooks-verified.md).
+
+## Architecture
+
+```
+Déclencheurs (contenu, filet global, intégrations, rt_nginx_helper_purge_all, manuels)
+   │ enqueue_url / enqueue_all
+   ▼
+FaaasterCachePurgeQueue  dédoublonnage ; purge totale prioritaire ; escalade (seuil, budget 3 s) ;
+   │                      garde-fou anti-tempête (APCu) ; vidage unique à shutdown (100000)
+   │                      après fastcgi_finish_request() ; immédiat si forcé
+   ├─► GET http://127.0.0.1/purge<path> (Host = hôte de l'URL ; 200 purgé, 412 absent) | /purge-all
+   ├─► POST /?rest_route=/hostmanager/v1/flush_object_cache  (purge totale lancée en CLI)
+   ├─► Cloudflare : un appel « everything » ou des lots de 30 URL (route Next /cloudflare)
+   └─► journal (option faaaster_cache_events, 100 entrées) + error_log('[faaaster-cache] …')
+FaaasterCacheTtlEmitter → X-Accel-Expires + X-Faaaster-Cache-TTL
+```
+
+| Fichier (`class/cache/`) | Rôle |
+|---|---|
+| `bootstrap.php` | chargement, `faaaster_cache()`, `faaaster_cache_boot()` |
+| `cache.php` | singleton, contexte (CLI, hostmanager, reprise en main), `hook()` protégé (try/catch Throwable) |
+| `settings.php`, `events.php` | réglages (option `faaaster_cache_settings`), journal |
+| `url.php`, `transport.php`, `purge-queue.php` | normalisation, appels nginx, file |
+| `cascade.php`, `content-listener.php`, `global-triggers.php` | purge en cascade, contenu, filet global |
+| `takeover.php`, `compat.php` | reprise en main du fork, shim `$nginx_purger` |
+| `integrations/` | WP Rocket, WooCommerce, Elementor, Beaver Builder, optimiseurs, caches tiers ; payants en détection seule |
+| `ttl-rules.php`, `ttl-emitter.php`, `nginx-conf.php` | TTL par contexte |
+| `hostmanager.php`, `cli.php` | `clear_cache` / `flush_object_cache`, WP-CLI |
+
+`class/wp-rocket-policy.php` (hors module) : cache de pages de WP Rocket coupé selon `DISABLE_WPROCKET`, préchargement et RUCSS bridés.
+
+## Interrupteurs (constantes dans `wp-config.php`)
+
+| Constante | Effet |
+|---|---|
+| `FAAASTER_CACHE_MODULE_DISABLED` | module entier ; sans le fork dans l'image, **plus aucune purge automatique** (dernier recours) |
+| `FAAASTER_CACHE_TTL_DISABLED` | aucun `X-Accel-Expires` ni diagnostic |
+| `FAAASTER_CACHE_INTEGRATIONS_DISABLED`, `FAAASTER_CACHE_DISABLE_<ID>` | toutes les intégrations, ou une (`WP_ROCKET`, `WOOCOMMERCE`, `ELEMENTOR`…) |
+| `FAAASTER_WP_ROCKET_POLICY_DISABLED` | bridage WP Rocket (le filtre de cache de pages reste régi par `DISABLE_WPROCKET`) |
+| `FAAASTER_HOSTMANAGER_REQUIRE_AUTH` | Bearer obligatoire sur `clear_cache` (P6) |
+
+## WP-CLI
+
+```bash
+wp faaaster cache status
+wp faaaster cache purge https://example.com/page/ [https://…]
+wp faaaster cache purge --all
+wp faaaster cache ttl list
+wp faaaster cache ttl set front_page 3600   # 0 = ne pas mettre en cache
+wp faaaster cache ttl unset front_page
+wp faaaster cache ttl reset
+```
+
+Les URL se passent en arguments : `--url` est une option globale de WP-CLI. `wp nginx-helper purge-all` reste un alias déprécié quand le fork est absent.
+
+## TTL par contexte
+
+Contextes : `404`, `front_page`, `home`, `singular[:<type>]`, `archive[:<type>]`, `taxonomy[:<taxonomie>]`, `author`, `date`, `search`, `feed`. Le plus précis gagne. Sans règle, **aucun en-tête** : `/app/conf/cache-ttl.user.conf` (10 h) s'applique. Toujours `0` pour `DONOTCACHEPAGE` et les pages panier, commande et compte ; plafond de 11 h si un nonce a été généré pour un visiteur anonyme. `X-Accel-Expires` n'est jamais transmis au visiteur ; `X-Faaaster-Cache-TTL` l'est (ex. `600; rule=front_page`).
+
+## API publique
+
+| Hook | Type | Rôle |
+|---|---|---|
+| `faaaster_cache_cascade_urls` | filtre `($urls, $post)` | URL purgées pour un contenu |
+| `faaaster_cache_hosts` | filtre `($hosts)` | hôtes autorisés pour Cloudflare |
+| `faaaster_cache_settings_updated` | action `($section)` | réglages modifiés |
+| `rt_nginx_helper_purge_all` | action écoutée | compat : purge totale demandée par un tiers |
+| `$GLOBALS['nginx_purger']` | shim | `purge_url()`, `purge_all()`, `purge_post()` (build-agent de Next) |
+
+`$GLOBALS['nginx_helper']` n'est **jamais** défini : il garde éteinte l'intégration nginx-helper native de WP Rocket (purge totale à chaque job RUCSS).
+
+## Pièges
+
+- **Object cache APCu : CLI ≠ FPM.** WP-CLI a son propre segment APCu par processus. Le module vide l'object cache de FPM après une purge totale ou un changement de réglages lancés en CLI ; ailleurs, passer par la route `clear_cache`.
+- **Ne jamais simuler un hook global** (`do_action('switch_theme')`) sur un site réel : les extensions y réagissent (Elementor efface tous ses CSS).
+- Erreurs du module : `class/error-handler.php` ignore les fichiers du manager-plugin ; le module journalise lui-même (`[faaaster-cache]` dans le log d'erreurs PHP).
+
+## Tests
+
+```bash
+php test/cache/run.php      # sans WordPress ; FC_VERBOSE=1 pour voir les error_log attendus
+php test/auth-cookie.php
+```
+
+CI GitHub : PHP 7.4, 8.2, 8.4, 8.5 (`.github/workflows/tests.yml`).
