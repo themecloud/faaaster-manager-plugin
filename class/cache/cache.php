@@ -17,6 +17,7 @@ final class FaaasterCache
     private $queue;
     private $hostmanager;
     private $cloudflare;
+    private $cascade;
 
     /**
      * @param array $args cloudflare, cf_enabled, hostmanager ; pour les tests :
@@ -67,10 +68,26 @@ final class FaaasterCache
 
     private function register()
     {
-        FaaasterCacheCompat::register($this);
+        if ($this->context['fork_present']) {
+            FaaasterCacheTakeover::run($this);
+            $this->context['takeover'] = true;
+        } else {
+            FaaasterCacheCompat::register($this);
+            $this->context['takeover'] = false;
+        }
+        $this->cascade = new FaaasterCacheCascade($this->settings);
+        $listener = new FaaasterCacheContentListener($this, $this->cascade);
+        $listener->register();
+        $triggers = new FaaasterCacheGlobalTriggers($this);
+        $triggers->register();
         if ($this->context['cli']) {
             FaaasterCacheCli::register();
         }
+    }
+
+    public function cascade()
+    {
+        return $this->cascade;
     }
 
     /**

@@ -415,3 +415,5 @@ Image wp-php84 (contrat 1.21), nginx avec `ngx_cache_purge` 2.5.
 `wp faaaster cache purge <url>` → nginx 200 + 1 lot Cloudflare 200 ; `hostmanager/v1/clear_cache` (appel identique au consumer) → `{"code":"ok"}`, FastCGI 200 (9 ms), **un seul** appel Cloudflare (200, 549 ms), object cache et opcache vidés.
 
 **WP-CLI :** `--url` est une option globale de WP-CLI, consommée avant la commande : les URL se passent en arguments (`wp faaaster cache purge <url>…`).
+
+**Validation P2** (04/10/2026, même méthode, fork 3.2.9 présent dans l'image `:latest`) : reprise en main → **23 callbacks** du fork retirés (24 en 3.2.10 : `elementor/core/files/clear_cache` en plus), menu « Server Cache » absent, `$nginx_helper` supprimé. Sauvegarde simulée d'un article publié (sans modifier son contenu) → 10 URL purgées en un passage : l'article, l'accueil, la page des articles `/actualites/` et ses pages 2-3, la catégorie, son flux et ses pages 2-3, le flux principal (statuts 200 et 412) + **un** lot Cloudflare. `switch_theme` simulé → une purge totale + un appel Cloudflare « everything ». Aucune erreur du module.

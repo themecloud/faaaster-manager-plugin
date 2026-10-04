@@ -10,6 +10,10 @@ require_once __DIR__ . '/events.php';
 require_once __DIR__ . '/purge-queue.php';
 require_once __DIR__ . '/hostmanager.php';
 require_once __DIR__ . '/compat.php';
+require_once __DIR__ . '/takeover.php';
+require_once __DIR__ . '/cascade.php';
+require_once __DIR__ . '/content-listener.php';
+require_once __DIR__ . '/global-triggers.php';
 require_once __DIR__ . '/cli.php';
 require_once __DIR__ . '/cache.php';
 

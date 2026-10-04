@@ -23,6 +23,19 @@ class FaaasterTestTransport implements FaaasterCacheTransportInterface
         return array('status' => $this->all_status, 'ms' => 1, 'error' => null);
     }
 
+    /** Chemins purgés (ordre d'appel). */
+    public function paths()
+    {
+        $paths = array();
+        foreach ($this->calls as $call) {
+            if ($call[0] === 'path') {
+                $paths[] = $call[2];
+            }
+        }
+        sort($paths);
+        return $paths;
+    }
+
     public function count($kind)
     {
         $n = 0;
@@ -62,7 +75,9 @@ function faaaster_test_boot(array $overrides = array())
 {
     faaaster_test_reset_hooks();
     faaaster_test_reset_wp();
+    faaaster_test_reset_content();
     FaaasterCache::reset();
+    FaaasterCacheTakeover::reset();
     unset($GLOBALS['nginx_purger'], $GLOBALS['nginx_helper']);
     $transport = new FaaasterTestTransport();
     $cloudflare = new FaaasterTestCloudflare();

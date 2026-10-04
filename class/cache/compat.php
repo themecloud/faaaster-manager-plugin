@@ -58,12 +58,9 @@ class FaaasterNginxPurgerCompat
 
 class FaaasterCacheCompat
 {
+    /** Fork absent (sinon voir FaaasterCacheTakeover::run). */
     public static function register(FaaasterCache $cache)
     {
-        // Fork présent : sa reprise en main installe le shim (takeover.php).
-        if ($cache->context('fork_present')) {
-            return;
-        }
         if (!isset($GLOBALS['nginx_purger'])) {
             $GLOBALS['nginx_purger'] = new FaaasterNginxPurgerCompat();
         }

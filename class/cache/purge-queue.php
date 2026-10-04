@@ -70,6 +70,9 @@ class FaaasterCachePurgeQueue
      */
     public function enqueue_all($source = '', $forced = false)
     {
+        if (!$forced && !$this->all && self::storm_suppressed()) {
+            return null;
+        }
         $this->all = true;
         $this->note_source($source);
         if ($forced) {
@@ -204,6 +207,34 @@ class FaaasterCachePurgeQueue
             'ok' => $ok,
             'escalated' => false,
         );
+    }
+
+    /**
+     * Garde-fou anti-tempête (purges totales automatiques uniquement) : au-delà
+     * de STORM_LIMIT par minute sur le pod, une seule toutes les STORM_WINDOW s.
+     * Les actions manuelles (forcées) ne sont jamais limitées. Une autre purge
+     * arrivant dans la fenêtre, la fraîcheur reste bornée. Sans APCu (CLI) : inactif.
+     */
+    const STORM_LIMIT = 20;
+    const STORM_WINDOW = 30;
+
+    public static function storm_suppressed()
+    {
+        if ((defined('WP_CLI') && WP_CLI) || !function_exists('apcu_enabled') || !apcu_enabled()) {
+            return false;
+        }
+        $key = 'faaaster_cache_pa_' . (int) floor(time() / 60);
+        apcu_add($key, 0, 120);
+        if (apcu_inc($key) <= self::STORM_LIMIT) {
+            return false;
+        }
+        if (apcu_add('faaaster_cache_pa_window', 1, self::STORM_WINDOW)) {
+            return false;
+        }
+        if (apcu_add('faaaster_cache_storm_logged', 1, 60)) {
+            FaaasterCache::log('purge-all storm: automatic purge-all throttled');
+        }
+        return true;
     }
 
     /**

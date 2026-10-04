@@ -11,8 +11,9 @@ class FaaasterCacheCli
             return;
         }
         WP_CLI::add_command('faaaster cache', __CLASS__);
-        // Alias déprécié de la commande du fork, seulement s'il est absent.
-        if (!FaaasterCache::fork_present()) {
+        // Alias déprécié de la commande du fork, seulement si le fork n'est pas chargé
+        // (sinon sa propre commande existe déjà et passe par le shim $nginx_purger).
+        if (!class_exists('Nginx_Helper', false)) {
             WP_CLI::add_command('nginx-helper', 'FaaasterCacheCliNginxHelperAlias');
         }
     }
@@ -68,7 +69,9 @@ class FaaasterCacheCli
         $cache = faaaster_cache();
         WP_CLI::line(json_encode(array(
             'module' => (bool) $cache,
-            'fork_present' => FaaasterCache::fork_present(),
+            'fork_loaded' => class_exists('Nginx_Helper', false),
+            'takeover' => $cache ? (bool) $cache->context('takeover') : false,
+            'takeover_removed' => FaaasterCacheTakeover::removed(),
             'settings' => $cache ? $cache->settings()->all() : null,
         ), JSON_PRETTY_PRINT));
     }
