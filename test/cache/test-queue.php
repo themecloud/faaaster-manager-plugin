@@ -97,3 +97,19 @@ $cache->queue()->enqueue_url('https://example.com/3/', 'slow');
 $r = $cache->queue()->flush(true);
 fc_check('budget exceeded escalates to purge-all', array($r['mode'], $t->count('all')), array('all', 1));
 fc_check('budget escalation purges Cloudflare everything', $cf->everything, 1);
+
+// Schéma Cloudflare : en CLI, content_url() rend du http:// sur un site en https
+// (is_ssl() faux) ; le schéma fait partie de la clé de cache Cloudflare.
+list($cache, $t, $cf) = faaaster_test_boot();
+$cache->queue()->enqueue_url('http://example.com/wp-content/uploads/elementor/css/post-12.css', 'build-agent');
+$cache->queue()->enqueue_url('http://example.com/page/', 'build-agent');
+$cache->queue()->flush(true);
+fc_check('http URL of an https site → https at Cloudflare', $cf->url_batches[0], array('https://example.com/wp-content/uploads/elementor/css/post-12.css', 'https://example.com/page/'));
+fc_check('nginx purge unchanged (host + path)', $t->paths(), array('/page/'));
+list($cache, $t, $cf) = faaaster_test_boot(array('site_provider' => function () {
+    return array('home_url' => 'http://example.com/', 'hosts' => array('example.com'));
+}));
+$cache->queue()->enqueue_url('https://example.com/a/', 'test');
+$cache->queue()->enqueue_url('http://example.com/b/', 'test');
+$cache->queue()->flush(true);
+fc_check('never downgraded, http site kept as is', $cf->url_batches[0], array('https://example.com/a/', 'http://example.com/b/'));

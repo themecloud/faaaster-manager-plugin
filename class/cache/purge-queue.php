@@ -54,7 +54,14 @@ class FaaasterCachePurgeQueue
         $this->note_source($source);
 
         if ($this->cf_enabled && FaaasterCacheUrl::host_allowed($parsed['host'], $site['hosts'])) {
-            $this->cf_urls[FaaasterCacheUrl::key($parsed)] = $parsed['url'];
+            // Le schéma fait partie de la clé de cache Cloudflare. En CLI, is_ssl()
+            // est faux : content_url() / plugins_url() rendent du http:// sur un site
+            // en https (build-agent, intégrations) → purge sans effet. Jamais de
+            // rétrogradation https → http.
+            $cf_url = ($parsed['scheme'] === 'http' && $site['home_scheme'] === 'https')
+                ? 'https' . substr($parsed['url'], 4)
+                : $parsed['url'];
+            $this->cf_urls[FaaasterCacheUrl::key($parsed)] = $cf_url;
         }
         if (FaaasterCacheUrl::purge_paths($parsed, $site['home_path']) !== array()) {
             $this->urls[FaaasterCacheUrl::key($parsed)] = $parsed;
@@ -293,6 +300,7 @@ class FaaasterCachePurgeQueue
                 'home_url' => $home ? $home['url'] : '',
                 'home_host' => $home ? $home['host'] : 'localhost',
                 'home_path' => $home ? $home['path'] : '/',
+                'home_scheme' => $home ? $home['scheme'] : 'https',
                 'hosts' => isset($site['hosts']) ? array_values(array_unique(array_map('strtolower', $site['hosts']))) : array(),
             );
         }
