@@ -91,7 +91,6 @@ require_once(__DIR__ . '/class/plugin-manager.php');
 require_once(__DIR__ . '/class/theme-manager.php');
 require_once(__DIR__ . '/class/core-manager.php');
 require_once(__DIR__ . '/class/site-state.php');
-require_once(__DIR__ . '/class/mu-plugin-manager.php');
 require_once(__DIR__ . '/class/loginSSO.php');
 require_once(__DIR__ . '/class/cloudflare-manager.php');
 require_once(__DIR__ . '/class/managed-cron-manager.php');
@@ -110,7 +109,6 @@ FaaasterWpRocketPolicy::register();
 
 
 $siteState = new SiteState();
-$muManager = new MUPluginManager();
 $cloudflare = new FaaasterCloudflare($app_id, $branch, $wp_api_key, $cfcache_enabled, $faaaster_api_base);
 $staticManager = new FaaasterStaticManager();
 $pluginUpgrader = new PluginUpgrade();
@@ -207,45 +205,6 @@ function faaaster_manager_clear_all_cache()
         $cloudflare->purgeAll();
     }
     return null;
-}
-
-function faaaster_toggle_mu_plugin($request)
-{
-    global $muManager;
-
-    // verify if user nonce is valid and can do something
-    if (!current_user_can('manage_options')) {
-        // if not check X-TC_TOKEN that has been set to the tc-token cookie
-        if (!$request->get_header('X-TC-TOKEN')) {
-            $data = array(
-                "code" => "no_tc_token",
-                "data" => "Need to set X-TC-Token header"
-            );
-
-            return new WP_REST_Response($data, 403);
-        }
-
-        $ssoClass = new LoginSSO();
-
-        $verified = $ssoClass->verifyTCToken($request->get_header('X-TC-TOKEN'));
-
-        // invalid tc token
-        if (!$verified) {
-            $data = array(
-                "code" => "invalid_tc_token",
-                "data" => "Invalid TC Token"
-            );
-
-            return new WP_REST_Response($data, 403);
-        }
-    }
-
-    $data = array(
-        "code" => "ok",
-        "data" => $muManager->togglePlugin()
-    );
-
-    return new WP_REST_Response($data, 200);
 }
 
 // Get site info
@@ -376,7 +335,6 @@ function faaaster_at_rest_init()
     // valide journalisé ; bloquant avec FAAASTER_HOSTMANAGER_REQUIRE_AUTH.
     $namespace = 'hostmanager/v1';
 
-    $namespacePublic = 'public-hostmanager/v1';
 
     register_rest_route($namespace, '/site_state', array(
         'methods'   => WP_REST_Server::READABLE,
@@ -520,16 +478,8 @@ function faaaster_at_rest_init()
         'permission_callback' => faaaster_hostmanager_guard('static_push'),
     ));
 
-    // Routes publiques à contrôle interne : toggle_mu_plugin exige manage_options
-    // ou un jeton TC validé auprès de Next (verifyTCToken) ; sso/v1/login valide
-    // son jeton (LoginSSO::fetchUserinfo).
-    register_rest_route($namespacePublic, '/toggle_mu_plugin', array(
-        'methods'   => WP_REST_Server::READABLE,
-        'callback'  => 'faaaster_toggle_mu_plugin',
-        'args' => array(),
-        'permission_callback' => '__return_true',
-    ));
-
+    // Route publique à contrôle interne : sso/v1/login valide son jeton auprès
+    // de Next (LoginSSO::fetchUserinfo) ; dernière étape du SSO « Accéder à l'admin ».
     register_rest_route('sso/v1', '/login', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_login',

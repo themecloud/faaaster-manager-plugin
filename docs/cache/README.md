@@ -79,7 +79,7 @@ Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur.
 - `site_state` → `other_data.cache` : `module` (`active`/`disabled`), `takeover` (fork repris en main), `ttl_rules`, `purge_rules_customized`.
 - `site_state` → `other_data.hostmanager_auth` : appels des routes locales sans Bearer valide (`count`, `last_at`, `last_route`, `last_reason`, `last_agent` ; jamais le jeton).
 - `manager_version` → `capabilities.cacheModule` : module actif, donc `clear_cache` répond `502 purge_failed` en cas d'échec.
-- Appelants des routes locales au 04/10/2026 : consumer `hostmanager.ts` (hostmanager/v1 et faaaster-agent/v1) et `fstr-wp-op.sh` envoient le Bearer ; `fstr-worker.php` de wp-builder l'envoie depuis 0.12 (`local_route_headers()`, aussi sur `abilities/run` et `rest`). Exceptions publiques à contrôle interne : `public-hostmanager/v1/toggle_mu_plugin` (`manage_options` ou jeton TC validé auprès de Next) et `sso/v1/login`. `flush_object_cache` et `list_agent_users` exigent toujours le Bearer (bloquant).
+- Appelants des routes locales au 04/10/2026 : consumer `hostmanager.ts` (hostmanager/v1 et faaaster-agent/v1) et `fstr-wp-op.sh` envoient le Bearer ; `fstr-worker.php` de wp-builder l'envoie depuis 0.12 (`local_route_headers()`, aussi sur `abilities/run` et `rest`). Exception publique à contrôle interne : `sso/v1/login` (jeton validé auprès de Next). `public-hostmanager/v1/toggle_mu_plugin` (code mort : installait un mu-plugin « benchmark-analysis » depuis un bucket de dev) est supprimée en 0.12. `flush_object_cache` et `list_agent_users` exigent toujours le Bearer (bloquant).
 
 ## API publique
 

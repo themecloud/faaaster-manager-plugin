@@ -111,8 +111,8 @@ fc_check('state: disabled module writes nothing', $GLOBALS['faaaster_test']['opt
 // ---- Câblage : clear_cache passe par la permission journalisée ; capacité exposée.
 $main = file_get_contents(__DIR__ . '/../../faaaster-manager-plugin.php');
 // Aucune route locale de la plateforme sans garde : hostmanager/v1 et
-// faaaster-agent/v1 ; seules les deux routes publiques à contrôle interne
-// (toggle_mu_plugin : manage_options ou jeton TC ; sso/v1/login) restent ouvertes.
+// faaaster-agent/v1 ; seule la route publique sso/v1/login (jeton validé auprès
+// de Next) reste ouverte. toggle_mu_plugin (code mort) a été supprimée.
 $sources = array(
     'faaaster-manager-plugin.php' => $main,
     'class/mcp-abilities.php' => file_get_contents(__DIR__ . '/../../class/mcp-abilities.php'),
@@ -124,14 +124,15 @@ foreach ($sources as $file => $code) {
     foreach ($all as $r) {
         $routes++;
         $id = trim($r[1], " '") . $r[2];
-        $public = in_array($id, array('$namespacePublic/toggle_mu_plugin', 'sso/v1/login'), true);
+        $public = $id === 'sso/v1/login';
         $guarded = (bool) preg_match('#faaaster_hostmanager_guard\(|\$localhost\(|\'faaaster_agent_hostmanager_permission\'|array\(\'FaaasterCacheHostmanager\', \'bearer_ok\'\)|\'faaaster_mcp_ability_permission\'#', $r[3]);
         if (!$guarded && !$public) {
             $unguarded[] = $id;
         }
     }
 }
-fc_check('platform routes found', $routes >= 28, true);
+fc_check('platform routes found', $routes >= 27, true);
+fc_check('toggle_mu_plugin removed', strpos($main, 'toggle_mu_plugin') === false && !file_exists(__DIR__ . '/../../class/mu-plugin-manager.php'), true);
 fc_check('every platform route is guarded', $unguarded, array());
 fc_check('faaaster-agent localhost routes use the common guard', strpos($sources['class/mcp-abilities.php'], 'faaaster_hostmanager_guard(\'faaaster-agent/\' . $route)') !== false, true);
 $site_state_src = file_get_contents(__DIR__ . '/../../class/site-state.php');
