@@ -1,16 +1,24 @@
 <?php
 
 /**
- * Garde commune des routes hostmanager/v1 (appelées en boucle locale par la
- * plateforme : pont du k8s-consumer, fstr-wp-op.sh, fstr-worker).
+ * Garde des routes locales de la plateforme (hostmanager/v1, faaaster-agent/v1),
+ * appelées en boucle locale : pont du k8s-consumer (tout Next passe par lui),
+ * fstr-wp-op.sh, fstr-worker.
  *
- * nginx n'ouvre déjà ces routes qu'à 127.0.0.1 ; cette garde ajoute le Bearer
- * WP_API_KEY (comparaison en temps constant) pour que tout autre client local
- * (extension qui ferait une requête vers le site lui-même, script dans le pod)
- * ne puisse pas les appeler. Phase 1 : un appel sans Bearer valide est accepté
- * mais journalisé et compté (site_state → other_data.hostmanager_auth) ;
- * FAAASTER_HOSTMANAGER_REQUIRE_AUTH le rend bloquant (phase 2, une fois le
- * compteur à zéro sur le parc). Indépendante de l'interrupteur du module cache.
+ * nginx n'ouvre ces routes qu'à 127.0.0.1 ; la garde exige en plus le Bearer
+ * WP_API_KEY (comparaison en temps constant) pour qu'aucun autre client local
+ * (extension, script dans le pod) ne puisse les appeler.
+ *
+ * - faaaster_hostmanager_guard() : BLOQUANT. Routes critiques que seuls Next (via
+ *   le pont, qui envoie toujours le Bearer) et fstr-worker de la même image
+ *   appellent, ou que plus rien n'appelle.
+ * - faaaster_hostmanager_guard_phased() : par phases, pour les routes à
+ *   appelants multiples et peu critiques (clear_cache) : phase 1, l'appel sans
+ *   Bearer valide passe ; FAAASTER_HOSTMANAGER_REQUIRE_AUTH le bloque (phase 2).
+ *
+ * Tout appel sans Bearer valide, refusé ou non, est journalisé et compté
+ * (site_state → other_data.hostmanager_auth) pour repérer un appelant oublié.
+ * Indépendante de l'interrupteur du module cache.
  */
 class FaaasterHostmanagerAuth
 {
@@ -101,8 +109,16 @@ class FaaasterHostmanagerAuth
     }
 }
 
-/** permission_callback d'une route hostmanager/v1 (garde commune). */
+/** permission_callback BLOQUANT d'une route locale critique. */
 function faaaster_hostmanager_guard($route)
+{
+    return function ($request) use ($route) {
+        return FaaasterHostmanagerAuth::authorize($route, $request, true);
+    };
+}
+
+/** permission_callback par phases (appelants multiples, peu critique). */
+function faaaster_hostmanager_guard_phased($route)
 {
     return function ($request) use ($route) {
         return FaaasterHostmanagerAuth::authorize($route, $request, FaaasterHostmanagerAuth::require_auth());

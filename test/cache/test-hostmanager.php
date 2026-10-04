@@ -49,9 +49,9 @@ class FaaasterTestRequest
         return $name === 'user-agent' ? $this->agent : null;
     }
 }
-fc_check('bearer ok', FaaasterCacheHostmanager::bearer_ok(new FaaasterTestRequest('Bearer unit-test-key')), true);
-fc_check('bearer wrong', FaaasterCacheHostmanager::bearer_ok(new FaaasterTestRequest('Bearer nope')), false);
-fc_check('bearer missing', FaaasterCacheHostmanager::bearer_ok(new FaaasterTestRequest(null)), false);
+fc_check('bearer ok', FaaasterHostmanagerAuth::bearer_problem(new FaaasterTestRequest('Bearer unit-test-key')), null);
+fc_check('bearer wrong', FaaasterHostmanagerAuth::bearer_problem(new FaaasterTestRequest('Bearer nope')), 'invalid');
+fc_check('bearer missing', FaaasterHostmanagerAuth::bearer_problem(new FaaasterTestRequest(null)), 'missing');
 list($cache, $t, $cf) = faaaster_test_boot();
 $response = $cache->hostmanager()->rest_flush_object_cache(null);
 fc_check('flush_object_cache → ok + wp_cache_flush', array($response->get_status(), $GLOBALS['faaaster_test']['cache_flushed']), array(200, 1));
@@ -78,8 +78,11 @@ fc_check('three unauthenticated calls counted', FaaasterHostmanagerAuth::stats()
 $stored = serialize(get_option(FaaasterHostmanagerAuth::OPTION));
 fc_check('token never stored', array(strpos($stored, 'unit-test-key'), strpos($stored, 'nope'), strpos($stored, 'Bearer')), array(false, false, false));
 $guard = faaaster_hostmanager_guard('site_state');
-fc_check('guard defaults to non-blocking', $guard(new FaaasterTestRequest(null)), true);
-fc_check('guard records its route', FaaasterHostmanagerAuth::stats()['last_route'], 'site_state');
+fc_check('critical route guard is blocking', $guard(new FaaasterTestRequest(null)), false);
+fc_check('critical route refusal is recorded', FaaasterHostmanagerAuth::stats()['last_route'], 'site_state');
+fc_check('critical route guard lets the Bearer through', $guard(new FaaasterTestRequest('Bearer unit-test-key')), true);
+$phased = faaaster_hostmanager_guard_phased('clear_cache');
+fc_check('phased guard (clear_cache) lets an unauthenticated call through in phase 1', $phased(new FaaasterTestRequest(null)), true);
 $long = str_repeat('a', 300);
 FaaasterHostmanagerAuth::authorize('clear_cache', new FaaasterTestRequest(null, $long), false);
 fc_check('agent truncated to 80', strlen(FaaasterHostmanagerAuth::stats()['last_agent']), 80);
@@ -95,7 +98,7 @@ fc_check('same request, same decision', FaaasterHostmanagerAuth::authorize('clea
 $state = faaaster_cache_state();
 fc_check('state: module active', array($state['module'], $state['takeover'], $state['ttl_rules'], $state['purge_rules_customized']), array('active', false, 0, false));
 fc_check('state: auth counter no longer in the cache block', array_key_exists('clear_cache_unauthenticated', $state), false);
-fc_check('auth counter exposed by FaaasterHostmanagerAuth::stats', FaaasterHostmanagerAuth::stats()['count'], 6);
+fc_check('auth counter exposed by FaaasterHostmanagerAuth::stats', FaaasterHostmanagerAuth::stats()['count'], 7);
 $cache->settings()->update_section('ttl', array('rules' => array('front_page' => 600, '404' => 120)));
 $purge = $cache->settings()->get('purge');
 $purge['always_paths'] = array('/contact/');
@@ -118,6 +121,7 @@ $sources = array(
     'class/mcp-abilities.php' => file_get_contents(__DIR__ . '/../../class/mcp-abilities.php'),
 );
 $unguarded = array();
+$phased_routes = array();
 $routes = 0;
 foreach ($sources as $file => $code) {
     preg_match_all("#register_rest_route\(\s*([^,]+),\s*'([^']+)'(.*?)\)\);#s", $code, $all, PREG_SET_ORDER);
@@ -125,7 +129,10 @@ foreach ($sources as $file => $code) {
         $routes++;
         $id = trim($r[1], " '") . $r[2];
         $public = $id === 'sso/v1/login';
-        $guarded = (bool) preg_match('#faaaster_hostmanager_guard\(|\$localhost\(|\'faaaster_agent_hostmanager_permission\'|array\(\'FaaasterCacheHostmanager\', \'bearer_ok\'\)|\'faaaster_mcp_ability_permission\'#', $r[3]);
+        $guarded = (bool) preg_match('#faaaster_hostmanager_guard(_phased)?\(|\$localhost\(|\'faaaster_agent_hostmanager_permission\'|\'faaaster_mcp_ability_permission\'#', $r[3]);
+        if (preg_match('#faaaster_hostmanager_guard_phased\(#', $r[3])) {
+            $phased_routes[] = $id;
+        }
         if (!$guarded && !$public) {
             $unguarded[] = $id;
         }
@@ -134,6 +141,8 @@ foreach ($sources as $file => $code) {
 fc_check('platform routes found', $routes >= 27, true);
 fc_check('toggle_mu_plugin removed', strpos($main, 'toggle_mu_plugin') === false && !file_exists(__DIR__ . '/../../class/mu-plugin-manager.php'), true);
 fc_check('every platform route is guarded', $unguarded, array());
+fc_check('only clear_cache is phased, every other local route blocks', $phased_routes, array('$namespace/clear_cache'));
+fc_check('faaaster-agent localhost routes use the blocking guard', strpos($sources['class/mcp-abilities.php'], 'faaaster_hostmanager_guard_phased') === false, true);
 fc_check('faaaster-agent localhost routes use the common guard', strpos($sources['class/mcp-abilities.php'], 'faaaster_hostmanager_guard(\'faaaster-agent/\' . $route)') !== false, true);
 $site_state_src = file_get_contents(__DIR__ . '/../../class/site-state.php');
 fc_check('site_state carries other_data.cache and hostmanager_auth', array(strpos($site_state_src, "faaaster_cache_state()") !== false, strpos($site_state_src, "FaaasterHostmanagerAuth::stats()") !== false), array(true, true));

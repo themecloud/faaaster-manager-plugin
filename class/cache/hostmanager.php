@@ -44,12 +44,6 @@ class FaaasterCacheHostmanager
         return new WP_REST_Response(array('code' => 'ok'), 200);
     }
 
-    /** Bearer WP_API_KEY obligatoire, bloquant (flush_object_cache). */
-    public static function bearer_ok($request)
-    {
-        return FaaasterHostmanagerAuth::bearer_problem($request) === null;
-    }
-
     /**
      * Réponse honnête : 502 purge_failed si la purge FastCGI n'a pas abouti
      * (le consumer en fait un avertissement, Next un message d'erreur client).

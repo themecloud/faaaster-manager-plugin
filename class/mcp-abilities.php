@@ -493,10 +493,9 @@ function faaaster_agent_build_rest_catalog()
 
 function faaaster_agent_register_routes()
 {
-    // localhost-only (nginx) + garde commune hostmanager : Bearer WP_API_KEY
-    // vérifié, appel sans Bearer journalisé (bloquant avec
-    // FAAASTER_HOSTMANAGER_REQUIRE_AUTH). Le pont du consumer et fstr-worker
-    // envoient le Bearer.
+    // localhost-only (nginx) + Bearer WP_API_KEY BLOQUANT (garde hostmanager) :
+    // seuls le pont du consumer et fstr-worker de la même image les appellent, et
+    // tous deux envoient le Bearer.
     $localhost = function ($route) {
         return array('permission_callback' => faaaster_hostmanager_guard('faaaster-agent/' . $route));
     };

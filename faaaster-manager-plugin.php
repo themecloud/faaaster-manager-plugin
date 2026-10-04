@@ -330,9 +330,10 @@ function faaaster_at_rest_init()
     global $pluginUpgrader, $themeUpgrader, $coreUpgrader, $staticManager;
 
     // route url: domain.com/wp-json/$namespace/$route
-    // Toutes les routes hostmanager/v1 passent par faaaster_hostmanager_guard()
-    // (class/hostmanager-auth.php) : Bearer WP_API_KEY vérifié, appel sans Bearer
-    // valide journalisé ; bloquant avec FAAASTER_HOSTMANAGER_REQUIRE_AUTH.
+    // Garde des routes hostmanager/v1 (class/hostmanager-auth.php) : Bearer
+    // WP_API_KEY BLOQUANT (faaaster_hostmanager_guard) — seuls Next via le pont du
+    // consumer et fstr-worker les appellent ; clear_cache, à appelants multiples,
+    // passe par phases (faaaster_hostmanager_guard_phased).
     $namespace = 'hostmanager/v1';
 
 
@@ -439,7 +440,7 @@ function faaaster_at_rest_init()
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_clear_cache',
         'args' => array(),
-        'permission_callback' => faaaster_hostmanager_guard('clear_cache'),
+        'permission_callback' => faaaster_hostmanager_guard_phased('clear_cache'),
     ));
 
     // Appelée en boucle locale par le module cache quand il tourne en CLI : vide
@@ -454,7 +455,7 @@ function faaaster_at_rest_init()
             return new WP_REST_Response(array('code' => 'ok'), 200);
         },
         'args' => array(),
-        'permission_callback' => array('FaaasterCacheHostmanager', 'bearer_ok'),
+        'permission_callback' => faaaster_hostmanager_guard('flush_object_cache'),
     ));
 
     register_rest_route($namespace, '/toggle_email', array(
