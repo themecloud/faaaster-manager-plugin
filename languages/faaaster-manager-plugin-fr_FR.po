@@ -187,12 +187,6 @@ msgstr "jours"
 msgid "Safeguards"
 msgstr "Garde-fous"
 
-msgid "Respect “do not cache” pages"
-msgstr "Respecter les pages « à ne pas mettre en cache »"
-
-msgid "Pages that ask not to be cached (cart, checkout, account, some forms) are never cached."
-msgstr "Les pages qui demandent à ne pas être mises en cache (panier, commande, compte, certains formulaires) ne le sont jamais."
-
 msgid "Keep forms working"
 msgstr "Préserver les formulaires"
 
@@ -426,4 +420,13 @@ msgstr "Purge en cascade"
 
 msgid "Only the page of the content itself is purged when it is published, updated or removed."
 msgstr "Seule la page du contenu elle-même est purgée quand il est publié, modifié ou retiré."
+
+msgid "Pages that must not be cached"
+msgstr "Pages à ne jamais mettre en cache"
+
+msgid "Cart, checkout, customer account and pages that ask not to be cached (some forms, member areas) are never cached, whatever the durations above."
+msgstr "Panier, commande, compte client et pages qui demandent à ne pas être mises en cache (certains formulaires, espaces membres) ne le sont jamais, quelles que soient les durées ci-dessus."
+
+msgid "Always on"
+msgstr "Toujours actif"
 

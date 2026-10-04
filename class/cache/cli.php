@@ -133,7 +133,7 @@ class FaaasterCacheCli
             'rules' => (object) $ttl['rules'],
             'nginx_default' => FaaasterCacheNginxConf::valid_map(),
             'guards' => array(
-                'donotcachepage' => $ttl['donotcachepage'],
+                'donotcachepage' => 'always',
                 'nonce_cap' => $ttl['nonce_cap'],
                 'diagnostic' => $ttl['diagnostic'],
             ),

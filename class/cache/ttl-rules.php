@@ -30,8 +30,9 @@ class FaaasterCacheTtlRules
         ), $in);
         $rules = isset($ttl['rules']) && is_array($ttl['rules']) ? $ttl['rules'] : array();
 
-        // 1-2. Garde-fous : ce que nginx ne peut pas voir.
-        if ($in['donotcachepage'] && !empty($ttl['donotcachepage'])) {
+        // 1-2. Garde-fous : ce que nginx ne peut pas voir. Jamais désactivables :
+        //      aucune règle ni aucun réglage ne met en cache une page qui le refuse.
+        if ($in['donotcachepage']) {
             return self::result(true, 0, 'donotcachepage');
         }
         if ($in['commerce']) {

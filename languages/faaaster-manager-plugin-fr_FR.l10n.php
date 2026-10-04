@@ -66,8 +66,6 @@ return array (
     'hours' => 'heures',
     'days' => 'jours',
     'Safeguards' => 'Garde-fous',
-    'Respect “do not cache” pages' => 'Respecter les pages « à ne pas mettre en cache »',
-    'Pages that ask not to be cached (cart, checkout, account, some forms) are never cached.' => 'Les pages qui demandent à ne pas être mises en cache (panier, commande, compte, certains formulaires) ne le sont jamais.',
     'Keep forms working' => 'Préserver les formulaires',
     'Pages containing a form security token are cached for 11 hours at most, so the token never expires in the cache.' => 'Les pages qui contiennent un jeton de sécurité de formulaire restent au plus 11 heures en cache : le jeton n\'y expire jamais.',
     'Diagnostic header' => 'En-tête de diagnostic',
@@ -142,5 +140,8 @@ return array (
     'no failure recorded' => 'aucun échec enregistré',
     'Cascade purge' => 'Purge en cascade',
     'Only the page of the content itself is purged when it is published, updated or removed.' => 'Seule la page du contenu elle-même est purgée quand il est publié, modifié ou retiré.',
+    'Pages that must not be cached' => 'Pages à ne jamais mettre en cache',
+    'Cart, checkout, customer account and pages that ask not to be cached (some forms, member areas) are never cached, whatever the durations above.' => 'Panier, commande, compte client et pages qui demandent à ne pas être mises en cache (certains formulaires, espaces membres) ne le sont jamais, quelles que soient les durées ci-dessus.',
+    'Always on' => 'Toujours actif',
   ),
 );

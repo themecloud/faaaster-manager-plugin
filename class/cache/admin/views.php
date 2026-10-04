@@ -153,7 +153,8 @@ class FaaasterCacheAdminViews
 
         $this->section(__('Safeguards', 'faaaster-manager-plugin'), '');
         echo '<div class="card">';
-        $this->switch_row('ttl[donotcachepage]', !empty($ttl['donotcachepage']), __('Respect “do not cache” pages', 'faaaster-manager-plugin'), __('Pages that ask not to be cached (cart, checkout, account, some forms) are never cached.', 'faaaster-manager-plugin'));
+        // Jamais désactivable : panier, commande, compte et pages DONOTCACHEPAGE.
+        echo '<div class="set-row"><div><div class="ti">' . esc_html__('Pages that must not be cached', 'faaaster-manager-plugin') . '</div><div class="desc">' . esc_html__('Cart, checkout, customer account and pages that ask not to be cached (some forms, member areas) are never cached, whatever the durations above.', 'faaaster-manager-plugin') . '</div></div><div class="ctl"><span class="badge ok">' . esc_html__('Always on', 'faaaster-manager-plugin') . '</span></div></div>';
         $this->switch_row('ttl[nonce_cap]', !empty($ttl['nonce_cap']), __('Keep forms working', 'faaaster-manager-plugin'), __('Pages containing a form security token are cached for 11 hours at most, so the token never expires in the cache.', 'faaaster-manager-plugin'));
         $this->switch_row('ttl[diagnostic]', !empty($ttl['diagnostic']), __('Diagnostic header', 'faaaster-manager-plugin'), __('Adds X-Faaaster-Cache-TTL to responses to show the applied duration and rule.', 'faaaster-manager-plugin'));
         echo '</div>';

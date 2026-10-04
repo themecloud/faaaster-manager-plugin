@@ -46,7 +46,7 @@ class FaaasterCacheTtlEmitter
     /** Étape A : WooCommerce pose DONOTCACHEPAGE dans wp_headers (prio 5), plus tôt. */
     public function on_send_headers()
     {
-        if ($this->settings('donotcachepage') && self::eligible() && defined('DONOTCACHEPAGE') && DONOTCACHEPAGE) {
+        if (self::eligible() && defined('DONOTCACHEPAGE') && DONOTCACHEPAGE) {
             $this->emit_line('X-Accel-Expires: 0');
         }
     }

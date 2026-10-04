@@ -56,10 +56,15 @@ fc_check('no Content-Type = text/html', $r['ttl'], 600);
 // Garde-fous.
 $r = FaaasterCacheTtlRules::resolve(array('headers' => $html, 'donotcachepage' => true, 'contexts' => array('front_page')), $ttl);
 fc_check('DONOTCACHEPAGE → 0', array($r['emit'], $r['ttl'], $r['rule']), array(true, 0, 'donotcachepage'));
+// Jamais désactivable : un ancien réglage donotcachepage=false stocké est ignoré,
+// et une règle longue sur le contexte ne l'emporte pas.
 $off = $ttl;
 $off['donotcachepage'] = false;
-$r = FaaasterCacheTtlRules::resolve(array('headers' => $html, 'donotcachepage' => true, 'contexts' => array('front_page')), $off);
-fc_check('DONOTCACHEPAGE guard can be switched off', $r['ttl'], 600);
+$off['rules']['singular:page'] = 86400;
+$r = FaaasterCacheTtlRules::resolve(array('headers' => $html, 'donotcachepage' => true, 'contexts' => array('singular:page', 'singular')), $off);
+fc_check('DONOTCACHEPAGE cannot be switched off', array($r['emit'], $r['ttl'], $r['rule']), array(true, 0, 'donotcachepage'));
+$r = FaaasterCacheTtlRules::resolve(array('headers' => $html, 'commerce' => true, 'contexts' => array('singular:page', 'singular')), $off);
+fc_check('cart/checkout/account → 0 despite a 1-day rule', array($r['emit'], $r['ttl'], $r['rule']), array(true, 0, 'commerce'));
 $r = FaaasterCacheTtlRules::resolve(array('headers' => $html, 'commerce' => true, 'contexts' => array('singular:page')), $base);
 fc_check('cart/checkout/account → 0 even without rule', array($r['emit'], $r['ttl'], $r['rule']), array(true, 0, 'commerce'));
 $r = FaaasterCacheTtlRules::resolve(array('headers' => array_merge($html, array('X-Accel-Expires: 120')), 'contexts' => array('front_page')), $ttl);

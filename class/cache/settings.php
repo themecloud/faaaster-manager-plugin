@@ -27,7 +27,6 @@ class FaaasterCacheSettings
             'ttl' => array(
                 // context_id => secondes (0 = ne pas mettre en cache).
                 'rules' => array(),
-                'donotcachepage' => true,
                 'nonce_cap' => true,
                 'diagnostic' => true,
             ),
@@ -155,7 +154,8 @@ class FaaasterCacheSettings
                 $out['rules'][$context] = max(0, min(self::MAX_TTL, (int) $seconds));
             }
         }
-        foreach (array('donotcachepage', 'nonce_cap', 'diagnostic') as $flag) {
+        // donotcachepage n'est plus un réglage (toujours respecté) : ignoré s'il est stocké.
+        foreach (array('nonce_cap', 'diagnostic') as $flag) {
             $out[$flag] = !empty($in[$flag]);
         }
         return $out;

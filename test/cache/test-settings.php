@@ -14,7 +14,8 @@ $GLOBALS['faaaster_test']['site_options']['rt_wp_nginx_helper_options'] = array(
 $s2 = new FaaasterCacheSettings();
 fc_check('import does not run again', $s2->get('purge', 'always_paths'), array('/landing/', '/promo/'));
 
-fc_check('defaults merged', $s->get('ttl', 'donotcachepage'), true);
+fc_check('defaults merged', $s->get('ttl', 'nonce_cap'), true);
+fc_check('donotcachepage is not a setting any more', array_key_exists('donotcachepage', FaaasterCacheSettings::defaults()['ttl']), false);
 
 $saved = $s->update_section('ttl', array(
     'rules' => array('front_page' => '3600', 'singular:post' => 999999999, 'bad key!' => 10, 'search' => ''),
