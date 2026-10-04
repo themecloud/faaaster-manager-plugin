@@ -18,6 +18,9 @@ require_once __DIR__ . '/integrations/integration.php';
 require_once __DIR__ . '/integrations/builders.php';
 require_once __DIR__ . '/integrations/plugins.php';
 require_once __DIR__ . '/integrations/registry.php';
+require_once __DIR__ . '/nginx-conf.php';
+require_once __DIR__ . '/ttl-rules.php';
+require_once __DIR__ . '/ttl-emitter.php';
 require_once __DIR__ . '/cli.php';
 require_once __DIR__ . '/cache.php';
 

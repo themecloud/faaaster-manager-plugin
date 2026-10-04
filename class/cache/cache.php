@@ -19,6 +19,8 @@ final class FaaasterCache
     private $cloudflare;
     private $cascade;
     private $integrations;
+    private $ttl = null;
+    private $args = array();
 
     /**
      * @param array $args cloudflare, cf_enabled, hostmanager ; pour les tests :
@@ -46,6 +48,7 @@ final class FaaasterCache
 
     private function __construct(array $args)
     {
+        $this->args = $args;
         $this->context = array(
             'hostmanager' => !empty($args['hostmanager']),
             'cli' => isset($args['cli']) ? (bool) $args['cli'] : (defined('WP_CLI') && WP_CLI),
@@ -77,6 +80,14 @@ final class FaaasterCache
             FaaasterCacheCompat::register($this);
             $this->context['takeover'] = false;
         }
+        // Réglages modifiés depuis le CLI : PHP-FPM lirait l'ancienne valeur dans
+        // son object cache APCu (segment séparé) → on le fait vider.
+        if ($this->context['cli']) {
+            $queue = $this->queue;
+            $this->hook('faaaster_cache_settings_updated', function () use ($queue) {
+                $queue->flush_fpm_object_cache();
+            }, 10, 0);
+        }
         $this->cascade = new FaaasterCacheCascade($this->settings);
         $listener = new FaaasterCacheContentListener($this, $this->cascade);
         $listener->register();
@@ -86,6 +97,10 @@ final class FaaasterCache
         // Requêtes hostmanager : extensions et thème non chargés, rien à adapter.
         if (!$this->context['hostmanager']) {
             $this->integrations->register();
+            if (!(defined('FAAASTER_CACHE_TTL_DISABLED') && constant('FAAASTER_CACHE_TTL_DISABLED'))) {
+                $this->ttl = new FaaasterCacheTtlEmitter($this, isset($this->args['header_sink']) ? $this->args['header_sink'] : null);
+                $this->ttl->register();
+            }
         }
         if ($this->context['cli']) {
             FaaasterCacheCli::register();
@@ -100,6 +115,12 @@ final class FaaasterCache
     public function integrations()
     {
         return $this->integrations;
+    }
+
+    /** @return FaaasterCacheTtlEmitter|null */
+    public function ttl()
+    {
+        return $this->ttl;
     }
 
     /**

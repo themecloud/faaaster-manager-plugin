@@ -78,6 +78,71 @@ class FaaasterCacheCli
         ), JSON_PRETTY_PRINT));
     }
 
+    /**
+     * Règles de TTL par contexte (X-Accel-Expires). Sans règle, la durée nginx
+     * par défaut (/app/conf/cache-ttl.user.conf) s'applique.
+     *
+     * ## OPTIONS
+     *
+     * <action>
+     * : list | set | unset | reset
+     *
+     * [<context>]
+     * : 404, front_page, home, singular[:<type>], archive[:<type>], taxonomy[:<tax>], author, date, search, feed
+     *
+     * [<seconds>]
+     * : Durée en secondes (0 = ne pas mettre en cache). Pour `set`.
+     *
+     * ## EXAMPLES
+     *
+     *     wp faaaster cache ttl list
+     *     wp faaaster cache ttl set front_page 3600
+     *     wp faaaster cache ttl set 404 600
+     *     wp faaaster cache ttl unset front_page
+     *
+     * @when after_wp_load
+     */
+    public function ttl($args, $assoc_args)
+    {
+        $cache = faaaster_cache();
+        if (!$cache) {
+            WP_CLI::error('Faaaster cache module is disabled.');
+        }
+        $action = isset($args[0]) ? $args[0] : 'list';
+        $ttl = (array) $cache->settings()->get('ttl');
+        if ($action === 'set' || $action === 'unset') {
+            if (empty($args[1])) {
+                WP_CLI::error('Give a context.');
+            }
+            if ($action === 'set') {
+                if (!isset($args[2]) || !is_numeric($args[2])) {
+                    WP_CLI::error('Give a duration in seconds.');
+                }
+                $ttl['rules'][$args[1]] = (int) $args[2];
+            } else {
+                unset($ttl['rules'][$args[1]]);
+            }
+            $ttl = $cache->settings()->update_section('ttl', $ttl);
+        } elseif ($action === 'reset') {
+            $ttl['rules'] = array();
+            $ttl = $cache->settings()->update_section('ttl', $ttl);
+        } elseif ($action !== 'list') {
+            WP_CLI::error('Unknown action: ' . $action);
+        }
+        WP_CLI::line(json_encode(array(
+            'rules' => (object) $ttl['rules'],
+            'nginx_default' => FaaasterCacheNginxConf::valid_map(),
+            'guards' => array(
+                'donotcachepage' => $ttl['donotcachepage'],
+                'nonce_cap' => $ttl['nonce_cap'],
+                'diagnostic' => $ttl['diagnostic'],
+            ),
+        ), JSON_PRETTY_PRINT));
+        if ($action !== 'list') {
+            WP_CLI::warning('Pages already cached keep their previous duration until purged.');
+        }
+    }
+
     public static function print_report($report)
     {
         $line = json_encode($report);

@@ -67,6 +67,10 @@ class FaaasterCacheSettings
             : self::sanitize_ttl($values);
         update_option(self::OPTION, $all, true);
         $this->cache = $all;
+        // En CLI, PHP-FPM ne voit pas ce changement (object cache APCu séparé).
+        if (function_exists('do_action')) {
+            do_action('faaaster_cache_settings_updated', $section);
+        }
         return $all[$section];
     }
 
@@ -140,7 +144,9 @@ class FaaasterCacheSettings
         $out = self::defaults()['ttl'];
         if (isset($in['rules']) && is_array($in['rules'])) {
             foreach ($in['rules'] as $context => $seconds) {
-                if (!is_string($context) || !preg_match('/^[a-z0-9_:-]{1,60}$/', $context)) {
+                // Une clé « 404 » devient l'entier 404 dans un tableau PHP.
+                $context = (string) $context;
+                if (!preg_match('/^[a-z0-9_:-]{1,60}$/', $context)) {
                     continue;
                 }
                 if ($seconds === '' || $seconds === null) {

@@ -84,6 +84,13 @@ class FaaasterCachePurgeQueue
         return null;
     }
 
+    /** Vide l'object cache de PHP-FPM (utile seulement depuis le CLI). */
+    public function flush_fpm_object_cache()
+    {
+        $site = $this->site();
+        return $this->transport->flush_object_cache($site['home_host']);
+    }
+
     public function has_pending()
     {
         return $this->all || !empty($this->urls) || !empty($this->cf_urls);
