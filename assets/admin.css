@@ -1,0 +1,136 @@
+/*
+ * Page « Cache Faaaster » : socle et mise en page locale. Les primitives
+ * (.card, .btn, .switch, .table…) viennent de assets/ds/ (générées depuis Next,
+ * ne pas les restyler ici). Tokens du DS uniquement, aucune couleur en dur.
+ */
+
+/* Socle : la portée .fstr-ds porte les tokens (assets/ds/tokens.css). */
+.fstr-ds-wrap {
+  margin: 0;
+  padding: 0;
+}
+#wpcontent:has(.fstr-ds-wrap) {
+  padding-left: 0;
+}
+.fstr-ds {
+  background: var(--bg);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.5;
+  min-height: calc(100vh - 32px);
+  padding: 24px 28px 48px;
+  box-sizing: border-box;
+}
+.fstr-ds *,
+.fstr-ds *::before,
+.fstr-ds *::after {
+  box-sizing: border-box;
+}
+.fstr-ds > * + * {
+  margin-top: 16px;
+}
+.fstr-ds .card + .card {
+  margin-top: 12px;
+}
+
+/* Neutralise les styles globaux de wp-admin (forms.css, common.css) dans la portée. */
+/* common.css définit sa propre .card (max-width 520px, padding, marge haute). */
+.fstr-ds .card {
+  margin-top: 0;
+  padding: 0;
+  min-width: 0;
+  max-width: none;
+}
+.fstr-ds h1,
+.fstr-ds h2 {
+  padding: 0;
+}
+.fstr-ds input.txt,
+.fstr-ds select.txt,
+.fstr-ds textarea.txt {
+  box-shadow: none;
+  min-height: 0;
+  max-width: none;
+  line-height: 1.4;
+}
+.fstr-ds select.txt {
+  /* forms.css retire l'apparence native : on la rend (flèche du navigateur). */
+  -webkit-appearance: auto;
+  appearance: auto;
+  background-image: none;
+  width: auto;
+}
+.fstr-ds textarea.txt {
+  width: 100%;
+  font-family: var(--font-mono);
+}
+.fstr-ds button {
+  font-family: inherit;
+}
+.fstr-ds .switch {
+  padding: 0;
+  min-height: 0;
+}
+.fstr-ds form {
+  margin: 0;
+}
+
+/* Mise en page locale (aucune primitive équivalente dans le DS). */
+.fstr-ds .fstr-tabs {
+  flex-wrap: wrap;
+}
+.fstr-ds .fstr-inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.fstr-ds .fstr-inline .txt {
+  flex: 1;
+  min-width: 0;
+}
+.fstr-ds .fstr-num {
+  width: 116px;
+}
+.fstr-ds .fstr-dur {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.fstr-ds .fstr-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: flex-end;
+}
+.fstr-ds .fstr-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.fstr-ds .fstr-submit {
+  display: flex;
+  justify-content: flex-end;
+}
+.fstr-ds .fstr-details {
+  margin-top: 8px;
+  color: var(--text-2);
+}
+.fstr-ds .fstr-details summary {
+  cursor: pointer;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.fstr-ds .table + .help {
+  padding: 8px 12px;
+}
+
+@media (max-width: 680px) {
+  .fstr-ds {
+    padding: 16px;
+  }
+  .fstr-ds .fstr-inline {
+    flex-wrap: wrap;
+  }
+}

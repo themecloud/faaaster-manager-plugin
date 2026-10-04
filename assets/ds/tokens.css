@@ -1,0 +1,53 @@
+/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@cfa9da5b (styles/ds/tokens.css) — NE PAS ÉDITER. */
+.fstr-ds {
+  --bg: #F2F5F8;
+  --surface: #FFFFFF;
+  --surface-2: #F4F6F9;
+  --surface-3: #E9EDF2;
+  
+  --topbar-bg: #f8fafd;
+  --border: #DEE3EA;
+  --border-strong: #C3CBD6;
+  --hairline: #EBEEF3;
+  --text-1: #0F1722;
+  --text-2: #46525F;
+  --text-3: #7E8995;
+  --invert: #0F1722;
+  --invert-text: #F2F5F8;
+
+  
+  --brand: #00458B;
+  --brand-hover: #005CB3;
+  --brand-soft: #E7F0F9;
+  --brand-text: #00458B;
+  --accent: #3FD2C7;
+  --accent-deep: #14A89C;      
+  --accent-soft: #E1F8F6;
+  --accent-ink: #04302C;       
+
+  --ok: #14A89C;       --ok-soft: #E1F8F6;
+  --warn: #D9820B;     --warn-soft: #FBF3E2;   --warn-text: #95590A;
+  --danger: #D63125;   --danger-soft: #FCEFEE; --danger-text: #B42318;
+  --info: #00458B;     --info-soft: #E7F0F9;
+  --paused: #94A1B0;
+  --chart: #0B6BCB;
+  --chart-2: #14A89C;
+  --green: #14A89C; --green-soft: #E1F8F6;
+
+  
+  --side-bg: #032C52;
+  --side-bg-2: rgba(255,255,255,.06);
+  --side-active: rgba(63,210,199,.13);
+  --side-text: rgba(235,243,250,.92);
+  --side-text-2: rgba(196,213,228,.75);
+  --side-text-3: rgba(160,184,205,.55);
+  --side-border: rgba(255,255,255,.1);
+
+  --shadow-1: 0 1px 2px rgba(15,23,34,.05);
+  --shadow-2: 0 4px 16px rgba(15,23,34,.10);
+
+  --r-s: 5px; --r-m: 8px;
+  --font-ui: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --font-display: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen-Sans, Ubuntu, Cantarell, "Helvetica Neue", sans-serif;
+  --font-mono: 'JetBrains Mono', Consolas, Monaco, monospace;
+}

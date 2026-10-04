@@ -89,7 +89,8 @@ fc_check('late enqueue after shutdown flushes immediately', $t->count('path'), 2
 
 // Budget de temps dépassé : bascule en purge totale.
 list($cache, $t, $cf) = faaaster_test_boot();
-$t->delay_ms = 1600;
+// 2 × 2 000 ms : 1 s de marge au-dessus du budget de 3 s (horloge des VM docker).
+$t->delay_ms = 2000;
 $cache->queue()->enqueue_url('https://example.com/1/', 'slow');
 $cache->queue()->enqueue_url('https://example.com/2/', 'slow');
 $cache->queue()->enqueue_url('https://example.com/3/', 'slow');

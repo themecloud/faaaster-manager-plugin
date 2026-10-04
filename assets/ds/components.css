@@ -1,0 +1,766 @@
+/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@cfa9da5b (styles/ds/components.css) — NE PAS ÉDITER. */
+.fstr-ds .mono,
+.fstr-ds .code {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+.fstr-ds .icon-btn {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--r-s);
+  border: none;
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.fstr-ds .icon-btn:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.fstr-ds .icon-btn.round {
+  border-radius: 50%;
+}
+.fstr-ds .icon-btn .ndot {
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+  border: 2px solid var(--surface);
+}
+.fstr-ds .page-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-bottom: 26px;
+}
+.fstr-ds .page-h > :first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.fstr-ds .page-h .eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--text-3);
+  margin-bottom: 4px;
+  display: block;
+}
+.fstr-ds .page-h h1 {
+  font-family: var(--font-display);
+  font-size: 27px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.fstr-ds .page-h .sub {
+  font-size: 13px;
+  color: var(--text-3);
+  margin-top: 4px;
+}
+.fstr-ds .page-h > .sub {
+  flex-basis: 100%;
+  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.fstr-ds .page-h > .sub > * {
+  white-space: nowrap;
+}
+.fstr-ds .page-h .actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.fstr-ds .section-h {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 11px;
+}
+.fstr-ds .section-h h2 {
+  font-family: var(--font-display);
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fstr-ds .section-h h2::before {
+  content: "";
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+.fstr-ds .section-h .hint {
+  font-size: 12px;
+  color: var(--text-3);
+}
+.fstr-ds .section-h .right {
+  margin-left: auto;
+}
+.fstr-ds .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 14px;
+  border-radius: var(--r-m);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: background 0.13s, border-color 0.13s, color 0.13s,
+    box-shadow 0.13s, transform 0.08s;
+}
+.fstr-ds .alert a.btn {
+  text-decoration: none;
+}
+.fstr-ds .btn:active {
+  transform: translateY(1px);
+}
+.fstr-ds .btn:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.fstr-ds .btn:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(63, 210, 199, 0.4);
+}
+.fstr-ds .btn svg.lucide {
+  width: 14px;
+  height: 14px;
+}
+.fstr-ds .btn-primary {
+  background: var(--brand);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.22), 0 1px 3px rgba(0, 69, 139, 0.3);
+}
+.fstr-ds .btn-primary:hover {
+  background: var(--brand-hover);
+}
+.fstr-ds .btn-accent {
+  background: var(--accent);
+  color: var(--accent-ink);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 1px 6px rgba(63, 210, 199, 0.35);
+}
+.fstr-ds .btn-accent:hover {
+  background: #5bddd3;
+}
+.fstr-ds .btn-secondary {
+  background: var(--surface);
+  color: var(--text-1);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-1);
+}
+.fstr-ds .btn-secondary:hover {
+  border-color: var(--accent-deep);
+  color: var(--brand-text);
+}
+.fstr-ds .btn-ghost {
+  background: none;
+  color: var(--text-2);
+}
+.fstr-ds .btn-ghost:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.fstr-ds .btn-sm {
+  padding: 5px 11px;
+  font-size: 12.5px;
+  border-radius: var(--r-s);
+}
+.fstr-ds .link {
+  color: var(--brand-text);
+  font-size: 12.5px;
+  font-weight: 550;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.fstr-ds .link:hover {
+  text-decoration: underline;
+}
+.fstr-ds .link svg.lucide {
+  width: 13px;
+  height: 13px;
+}
+.fstr-ds .link.danger {
+  color: var(--danger-text);
+}
+.fstr-ds .sdot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+.fstr-ds .sdot.ok {
+  background: var(--ok);
+}
+.fstr-ds .sdot.warn {
+  background: var(--warn);
+}
+.fstr-ds .sdot.bad {
+  background: var(--danger);
+}
+.fstr-ds .sdot.info {
+  background: var(--info);
+}
+.fstr-ds .sdot.off {
+  background: var(--paused);
+}
+.fstr-ds .badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1.5px 8px;
+  border-radius: 99px;
+  font-size: 11px;
+  font-weight: 550;
+  white-space: nowrap;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+.fstr-ds .badge.ok {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: transparent;
+}
+.fstr-ds .badge.warn {
+  background: var(--warn-soft);
+  color: var(--warn-text);
+  border-color: transparent;
+}
+.fstr-ds .badge.bad {
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  border-color: transparent;
+}
+.fstr-ds .badge.info {
+  background: var(--info-soft);
+  color: var(--brand-text);
+  border-color: transparent;
+}
+.fstr-ds .card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  box-shadow: var(--shadow-1);
+}
+.fstr-ds .card-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-1);
+  background: color-mix(in srgb, var(--surface-2) 55%, var(--surface));
+  border-radius: var(--r-m) var(--r-m) 0 0;
+}
+.fstr-ds .card-h svg.lucide {
+  width: 14px;
+  height: 14px;
+  color: var(--text-2);
+}
+.fstr-ds .card-h .n {
+  font-weight: 500;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.fstr-ds .card-h .right {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.fstr-ds .card-b {
+  padding: 16px;
+}
+.fstr-ds .meter {
+  height: 4px;
+  border-radius: 99px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.fstr-ds .meter i {
+  display: block;
+  height: 100%;
+  background: var(--chart);
+  border-radius: 99px;
+}
+.fstr-ds .meter i.warn {
+  background: var(--warn);
+}
+.fstr-ds .meter i.bad {
+  background: var(--danger);
+}
+.fstr-ds .meter i.ok {
+  background: var(--green);
+}
+.fstr-ds .seg {
+  display: inline-flex;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-m);
+  padding: 2px;
+  gap: 1px;
+}
+.fstr-ds .seg button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4.5px 10px;
+  border: none;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.fstr-ds .seg button:hover {
+  color: var(--text-1);
+}
+.fstr-ds .seg button.active,
+.fstr-ds .seg button[data-state="active"] {
+  background: var(--surface-3);
+  color: var(--text-1);
+  font-weight: 600;
+}
+.fstr-ds .seg .n {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+}
+.fstr-ds .seg button svg.lucide {
+  width: 13px;
+  height: 13px;
+}
+.fstr-ds .alert {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 14px;
+  border-radius: var(--r-m);
+  font-size: 12.5px;
+  font-weight: 450;
+}
+.fstr-ds .alert > svg.lucide:first-child {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+.fstr-ds .alert .a-act {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.fstr-ds .alert .icon-btn {
+  width: 24px;
+  height: 24px;
+  color: inherit;
+  opacity: 0.65;
+}
+.fstr-ds .alert .icon-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+.fstr-ds .alert a {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.fstr-ds .alert-info {
+  background: var(--info-soft);
+  border: 1px solid color-mix(in srgb, var(--info) 22%, transparent);
+  color: var(--brand-text);
+}
+.fstr-ds .alert-warn {
+  background: var(--warn-soft);
+  border: 1px solid color-mix(in srgb, var(--warn) 28%, transparent);
+  color: var(--warn-text);
+}
+.fstr-ds .alert-danger {
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 25%, transparent);
+  color: var(--danger-text);
+}
+.fstr-ds .kv {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.fstr-ds .kv td {
+  padding: 8.5px 16px;
+  border-bottom: 1px solid var(--hairline);
+  vertical-align: middle;
+}
+.fstr-ds .kv tr:last-child td {
+  border-bottom: none;
+}
+.fstr-ds .kv .k {
+  color: var(--text-2);
+  width: 45%;
+}
+.fstr-ds .kv .v {
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.fstr-ds .kv .v.code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+}
+.fstr-ds .kv .v .okk {
+  color: var(--ok);
+}
+.fstr-ds .kv .v .badd {
+  color: var(--danger-text);
+}
+.fstr-ds .kv .v .warr {
+  color: var(--warn-text);
+}
+.fstr-ds .table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.fstr-ds .table th {
+  text-align: left;
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--text-2);
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.fstr-ds .table td {
+  padding: 11px 16px;
+  border-bottom: 1px solid var(--hairline);
+  white-space: nowrap;
+}
+.fstr-ds .table.dense th {
+  padding: 6px 12px;
+}
+.fstr-ds .table.dense td {
+  padding: 5px 12px;
+}
+.fstr-ds .table td.wrap {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.fstr-ds .table tr:last-child td {
+  border-bottom: none;
+}
+.fstr-ds .table tbody tr:hover {
+  background: var(--surface-2);
+}
+.fstr-ds .table tbody tr.row-static:hover {
+  background: transparent;
+}
+.fstr-ds .table tr.row-flag-bad td:first-child {
+  box-shadow: inset 3px 0 0 var(--danger);
+}
+.fstr-ds .table tr.row-flag-warn td:first-child {
+  box-shadow: inset 3px 0 0 var(--warn);
+}
+.fstr-ds .table tbody tr.row-tint-bad td {
+  background: color-mix(in srgb, var(--danger) 7%, var(--surface));
+}
+.fstr-ds .table tbody tr.row-tint-warn td {
+  background: color-mix(in srgb, var(--warn) 8%, var(--surface));
+}
+.fstr-ds .table th input[type="checkbox"],
+.fstr-ds .table td input[type="checkbox"] {
+  vertical-align: middle;
+}
+.fstr-ds .switch {
+  width: 32px;
+  height: 18px;
+  border-radius: 99px;
+  background: var(--border-strong);
+  position: relative;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: none;
+  flex-shrink: 0;
+}
+.fstr-ds .switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: left 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+.fstr-ds .switch.on,
+.fstr-ds .switch[data-state="checked"] {
+  background: var(--green);
+}
+.fstr-ds .switch.on::after,
+.fstr-ds .switch[data-state="checked"]::after {
+  left: 16px;
+}
+.fstr-ds .switch.switch-sm {
+  width: 28px;
+  height: 16px;
+}
+.fstr-ds .switch.switch-sm::after {
+  width: 12px;
+  height: 12px;
+}
+.fstr-ds .switch.switch-sm.on::after,
+.fstr-ds .switch.switch-sm[data-state="checked"]::after {
+  left: 14px;
+}
+.fstr-ds .field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.fstr-ds .field > label {
+  font-size: 12.5px;
+  font-weight: 550;
+}
+.fstr-ds .field .help {
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+.fstr-ds .field .help.error {
+  color: var(--danger-text);
+}
+.fstr-ds .txt {
+  padding: 7.5px 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-m);
+  background: var(--surface);
+  color: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+.fstr-ds .txt::placeholder {
+  color: var(--text-3);
+}
+.fstr-ds .txt:focus {
+  border-color: var(--accent-deep);
+  box-shadow: 0 0 0 3px rgba(63, 210, 199, 0.25);
+}
+.fstr-ds .txt.error {
+  border-color: var(--danger);
+}
+.fstr-ds .txt.error:focus {
+  box-shadow: 0 0 0 3px rgba(214, 49, 37, 0.18);
+}
+.fstr-ds .spinner {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, currentColor 25%, transparent);
+  border-top-color: currentColor;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.fstr-ds .btn.loading {
+  pointer-events: none;
+  opacity: 0.75;
+}
+.fstr-ds .btn-danger {
+  background: var(--danger);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.18);
+}
+.fstr-ds .btn-danger:hover {
+  background: #c02a1f;
+}
+.fstr-ds .btn-danger:disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+.fstr-ds .btn-warn {
+  background: var(--warn);
+  color: #fff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.16);
+}
+.fstr-ds .btn-warn:hover {
+  filter: brightness(1.06);
+}
+.fstr-ds .set-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--hairline);
+}
+.fstr-ds .set-row:last-child {
+  border-bottom: none;
+}
+.fstr-ds .set-row .ti {
+  font-size: 13px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.fstr-ds .set-row .desc {
+  font-size: 12px;
+  color: var(--text-3);
+  margin-top: 3px;
+  line-height: 1.5;
+  max-width: 520px;
+}
+.fstr-ds .set-row .ctl {
+  margin-left: auto;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.fstr-ds .pager {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--hairline);
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.fstr-ds .pager .info {
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+}
+.fstr-ds .pager button {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  border-radius: var(--r-s);
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.fstr-ds .pager button:hover {
+  background: var(--surface-2);
+  color: var(--text-1);
+}
+.fstr-ds .pager button.cur {
+  background: var(--brand-soft);
+  color: var(--brand-text);
+  font-weight: 650;
+}
+.fstr-ds .pager button:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+@media (max-width: 680px) {
+.fstr-ds .page-h {
+    flex-direction: column;
+    align-items: stretch;
+  }
+.fstr-ds .page-h .actions {
+    margin-left: 0;
+    width: 100%;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+.fstr-ds .card:has(> .table) {
+    overflow-x: auto !important;
+  }
+.fstr-ds .table {
+    min-width: 560px;
+  }
+.fstr-ds .card:has(> .table) {
+    background: linear-gradient(to right, var(--surface), transparent) 0 0 /
+        34px 100% no-repeat local,
+      linear-gradient(to left, var(--surface), transparent) 100% 0 / 34px 100%
+        no-repeat local,
+      radial-gradient(
+          farthest-side at 0 50%,
+          color-mix(in srgb, var(--text-1) 14%, transparent),
+          transparent
+        )
+        0 0 / 15px 100% no-repeat scroll,
+      radial-gradient(
+          farthest-side at 100% 50%,
+          color-mix(in srgb, var(--text-1) 14%, transparent),
+          transparent
+        )
+        100% 0 / 15px 100% no-repeat scroll,
+      var(--surface);
+  }
+.fstr-ds .set-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 11px;
+  }
+.fstr-ds .set-row .ctl {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+.fstr-ds .section-h {
+    flex-wrap: wrap;
+  }
+.fstr-ds .section-h .right {
+    margin-left: 0;
+    width: 100%;
+    margin-top: 4px;
+  }
+}
+@media (max-width: 520px) {
+.fstr-ds .page-h h1 {
+    font-size: 23px;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

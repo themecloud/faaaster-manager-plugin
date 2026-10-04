@@ -33,6 +33,7 @@ function fc_section($name)
 require_once __DIR__ . '/stubs/hooks.php';
 require_once __DIR__ . '/stubs/wp.php';
 require_once __DIR__ . '/stubs/wp-content.php';
+require_once __DIR__ . '/stubs/wp-admin.php';
 require_once __DIR__ . '/../../class/cache/bootstrap.php';
 require_once __DIR__ . '/../../class/cloudflare-manager.php';
 require_once __DIR__ . '/../../class/wp-rocket-policy.php';

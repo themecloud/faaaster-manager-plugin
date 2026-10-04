@@ -21,6 +21,10 @@ require_once __DIR__ . '/integrations/registry.php';
 require_once __DIR__ . '/nginx-conf.php';
 require_once __DIR__ . '/ttl-rules.php';
 require_once __DIR__ . '/ttl-emitter.php';
+require_once __DIR__ . '/admin/ds-icons.php';
+require_once __DIR__ . '/admin/views.php';
+require_once __DIR__ . '/admin/admin-bar.php';
+require_once __DIR__ . '/admin/admin.php';
 require_once __DIR__ . '/cli.php';
 require_once __DIR__ . '/cache.php';
 

@@ -25,3 +25,5 @@ jobs:
         run: php test/auth-cookie.php
       - name: Cache module tests
         run: php test/cache/run.php
+      - name: Translations compiled from .po
+        run: php scripts/build-i18n.php && git diff --exit-code -- languages/

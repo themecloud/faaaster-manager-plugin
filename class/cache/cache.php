@@ -101,6 +101,8 @@ final class FaaasterCache
                 $this->ttl = new FaaasterCacheTtlEmitter($this, isset($this->args['header_sink']) ? $this->args['header_sink'] : null);
                 $this->ttl->register();
             }
+            $admin = new FaaasterCacheAdmin($this);
+            $admin->register();
         }
         if ($this->context['cli']) {
             FaaasterCacheCli::register();

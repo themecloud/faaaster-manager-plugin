@@ -132,9 +132,17 @@ function is_taxonomy_viewable($taxonomy)
     return in_array($taxonomy, $GLOBALS['ft']['viewable_taxonomies'], true);
 }
 
-function get_object_taxonomies($type)
+function get_object_taxonomies($type, $output = 'names')
 {
-    return isset($GLOBALS['ft']['taxonomies'][$type]) ? $GLOBALS['ft']['taxonomies'][$type] : array();
+    $names = isset($GLOBALS['ft']['taxonomies'][$type]) ? $GLOBALS['ft']['taxonomies'][$type] : array();
+    if ($output !== 'objects') {
+        return $names;
+    }
+    $objects = array();
+    foreach ($names as $name) {
+        $objects[$name] = (object) array('name' => $name, 'labels' => (object) array('name' => ucfirst($name)));
+    }
+    return $objects;
 }
 
 function get_the_terms($post_id, $taxonomy)

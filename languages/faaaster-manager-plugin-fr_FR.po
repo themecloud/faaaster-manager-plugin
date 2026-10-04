@@ -1,0 +1,429 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: faaaster-manager-plugin\n"
+"Language: fr_FR\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+msgid "Purge cache"
+msgstr "Vider le cache"
+
+msgid "Entire cache"
+msgstr "Tout le cache"
+
+msgid "This page"
+msgstr "Cette page"
+
+msgid "You are not allowed to manage the page cache."
+msgstr "Vous n'avez pas les droits pour gérer le cache des pages."
+
+msgid "The whole page cache has been purged."
+msgstr "Tout le cache des pages a été vidé."
+
+msgid "The page cache could not be fully purged. Please try again; if it keeps failing, contact support."
+msgstr "Le cache des pages n'a pas pu être entièrement vidé. Réessayez ; si le problème persiste, contactez le support."
+
+msgid "Faaaster Cache"
+msgstr "Cache Faaaster"
+
+msgid "Purge rules saved."
+msgstr "Règles de purge enregistrées."
+
+msgid "Cache durations saved. Pages already cached keep their previous duration until they are purged."
+msgstr "Durées de cache enregistrées. Les pages déjà en cache gardent leur ancienne durée jusqu'à leur prochaine purge."
+
+msgid "Enter a full address of this site, for example https://example.com/page/."
+msgstr "Saisissez une adresse complète de ce site, par exemple https://example.com/page/."
+
+msgid "Purged: %s"
+msgstr "Purgée : %s"
+
+msgid "This address could not be purged. Please try again; if it keeps failing, contact support."
+msgstr "Cette adresse n'a pas pu être purgée. Réessayez ; si le problème persiste, contactez le support."
+
+msgid "Purge log cleared."
+msgstr "Journal des purges vidé."
+
+msgid "Purge rules"
+msgstr "Règles de purge"
+
+msgid "Cache durations"
+msgstr "Durées de cache"
+
+msgid "Tools"
+msgstr "Outils"
+
+msgid "Purge log"
+msgstr "Journal des purges"
+
+msgid "Integrations"
+msgstr "Intégrations"
+
+msgid "Page cache"
+msgstr "Cache des pages"
+
+msgid "Your pages are served from the server cache and, when enabled, from the Cloudflare edge. They are purged automatically when your content changes."
+msgstr "Vos pages sont servies depuis le cache du serveur et, s'il est activé, depuis le réseau Cloudflare. Elles sont purgées automatiquement quand votre contenu change."
+
+msgid "Purge the whole page cache? Pages will be rebuilt on their next visit."
+msgstr "Vider tout le cache des pages ? Les pages seront recalculées à leur prochaine visite."
+
+msgid "Purge entire cache"
+msgstr "Vider tout le cache"
+
+msgid "Automatic purge, by content type"
+msgstr "Purge automatique, par type de contenu"
+
+msgid "When a content item is published, updated or removed, it is always purged. These rules add the pages that list it."
+msgstr "Un contenu publié, modifié ou retiré est toujours purgé. Ces règles ajoutent les pages qui le listent."
+
+msgid "Purge related pages"
+msgstr "Purger les pages liées"
+
+msgid "Off: only the content itself is purged."
+msgstr "Désactivé : seul le contenu lui-même est purgé."
+
+msgid "Home page"
+msgstr "Page d'accueil"
+
+msgid "Turn on if your home page lists this content."
+msgstr "À activer si votre accueil liste ces contenus."
+
+msgid "Listing page"
+msgstr "Page de liste"
+
+msgid "This content type has no listing page."
+msgstr "Ce type de contenu n'a pas de page de liste."
+
+msgid "Author page"
+msgstr "Page de l'auteur"
+
+msgid "Date archives"
+msgstr "Archives par date"
+
+msgid "Year and month pages."
+msgstr "Pages par année et par mois."
+
+msgid "RSS feeds"
+msgstr "Flux RSS"
+
+msgid "Category and tag pages"
+msgstr "Pages de catégories et d’étiquettes"
+
+msgid "Pages of the terms assigned to the content."
+msgstr "Pages des catégories et étiquettes du contenu."
+
+msgid "Following pages of listings"
+msgstr "Pages suivantes des listes"
+
+msgid "Number of pages purged (/page/2/, /page/3/…). 0 or 1: first page only."
+msgstr "Nombre de pages purgées (/page/2/, /page/3/…). 0 ou 1 : première page seulement."
+
+msgid "Extra pages to purge (one path per line)"
+msgstr "Pages supplémentaires à purger (un chemin par ligne)"
+
+msgid "For every change"
+msgstr "À chaque modification"
+
+msgid "Pages always purged (one path per line)"
+msgstr "Pages toujours purgées (un chemin par ligne)"
+
+msgid "Up to 20 paths starting with /, without wildcard."
+msgstr "Jusqu'à 20 chemins commençant par /, sans joker."
+
+msgid "Approved comments"
+msgstr "Commentaires approuvés"
+
+msgid "Purge the commented content when a comment is approved, edited or removed."
+msgstr "Purger le contenu commenté quand un commentaire est approuvé, modifié ou retiré."
+
+msgid "Full purge threshold"
+msgstr "Seuil de purge totale"
+
+msgid "Beyond this number of addresses in one change, the whole cache is purged instead."
+msgstr "Au-delà de ce nombre d'adresses pour une modification, tout le cache est vidé à la place."
+
+msgid "Default duration"
+msgstr "Durée par défaut"
+
+msgid "Server cache (all pages)"
+msgstr "Cache du serveur (toutes les pages)"
+
+msgid "unknown"
+msgstr "inconnue"
+
+msgid "Where to change it"
+msgstr "Où la modifier"
+
+msgid "In your site files, folder conf (cache-ttl.user.conf)."
+msgstr "Dans les fichiers de votre site, dossier conf (cache-ttl.user.conf)."
+
+msgid "Help center"
+msgstr "Centre d'aide"
+
+msgid "Duration by page type"
+msgstr "Durée par type de page"
+
+msgid "Leave empty to use the default duration. 0 keeps the page out of the cache."
+msgstr "Laissez vide pour garder la durée par défaut. 0 exclut la page du cache."
+
+msgid "Page type"
+msgstr "Type de page"
+
+msgid "Duration"
+msgstr "Durée"
+
+msgid "default"
+msgstr "par défaut"
+
+msgid "seconds"
+msgstr "secondes"
+
+msgid "minutes"
+msgstr "minutes"
+
+msgid "hours"
+msgstr "heures"
+
+msgid "days"
+msgstr "jours"
+
+msgid "Safeguards"
+msgstr "Garde-fous"
+
+msgid "Respect “do not cache” pages"
+msgstr "Respecter les pages « à ne pas mettre en cache »"
+
+msgid "Pages that ask not to be cached (cart, checkout, account, some forms) are never cached."
+msgstr "Les pages qui demandent à ne pas être mises en cache (panier, commande, compte, certains formulaires) ne le sont jamais."
+
+msgid "Keep forms working"
+msgstr "Préserver les formulaires"
+
+msgid "Pages containing a form security token are cached for 11 hours at most, so the token never expires in the cache."
+msgstr "Les pages qui contiennent un jeton de sécurité de formulaire restent au plus 11 heures en cache : le jeton n'y expire jamais."
+
+msgid "Diagnostic header"
+msgstr "En-tête de diagnostic"
+
+msgid "Adds X-Faaaster-Cache-TTL to responses to show the applied duration and rule."
+msgstr "Ajoute X-Faaaster-Cache-TTL aux réponses pour indiquer la durée et la règle appliquées."
+
+msgid "Purge one address"
+msgstr "Purger une adresse"
+
+msgid "Address"
+msgstr "Adresse"
+
+msgid "Purge"
+msgstr "Purger"
+
+msgid "Test an address"
+msgstr "Tester une adresse"
+
+msgid "Loads the page twice as an anonymous visitor and shows how the server cache answers."
+msgstr "Charge la page deux fois comme un visiteur anonyme et montre la réponse du cache du serveur."
+
+msgid "Test"
+msgstr "Tester"
+
+msgid "Status"
+msgstr "Statut"
+
+msgid "Server cache"
+msgstr "Cache du serveur"
+
+msgid "Duration and rule"
+msgstr "Durée et règle"
+
+msgid "Sets a cookie"
+msgstr "Pose un cookie"
+
+msgid "Time"
+msgstr "Temps"
+
+msgid "error"
+msgstr "erreur"
+
+msgid "yes"
+msgstr "oui"
+
+msgid "no"
+msgstr "non"
+
+msgid "Health"
+msgstr "État"
+
+msgid "Recent purges"
+msgstr "Purges récentes"
+
+msgid "%d most recent"
+msgstr "les %d plus récentes"
+
+msgid "Clear log"
+msgstr "Vider le journal"
+
+msgid "No purge recorded yet."
+msgstr "Aucune purge enregistrée pour l'instant."
+
+msgid "When"
+msgstr "Quand"
+
+msgid "Origin"
+msgstr "Origine"
+
+msgid "Addresses"
+msgstr "Adresses"
+
+msgid "Result"
+msgstr "Résultat"
+
+msgid "%s ago"
+msgstr "il y a %s"
+
+msgid "entire cache"
+msgstr "tout le cache"
+
+msgid "%d address"
+msgid_plural "%d addresses"
+msgstr[0] "%d adresse"
+msgstr[1] "%d adresses"
+
+msgid "manual"
+msgstr "manuelle"
+
+msgid "done"
+msgstr "faite"
+
+msgid "failed"
+msgstr "échouée"
+
+msgid "Another page cache plugin is active (WP_CACHE and advanced-cache.php). It duplicates the server cache and can serve outdated pages: disable its page cache."
+msgstr "Une autre extension de cache de pages est active (WP_CACHE et advanced-cache.php). Elle fait doublon avec le cache du serveur et peut servir des pages périmées : désactivez son cache de pages."
+
+msgid "Detected plugins and builders"
+msgstr "Extensions et constructeurs détectés"
+
+msgid "When one of them regenerates or clears its files, the server cache is purged too."
+msgstr "Quand l’un d’eux régénère ou vide ses fichiers, le cache du serveur est purgé aussi."
+
+msgid "Plugin"
+msgstr "Extension"
+
+msgid "connected"
+msgstr "connectée"
+
+msgid "detected — covered by the global purge"
+msgstr "détectée — couverte par la purge globale"
+
+msgid "disabled"
+msgstr "désactivée"
+
+msgid "No supported plugin detected on this site."
+msgstr "Aucune extension prise en charge détectée sur ce site."
+
+msgid "Previous cache manager"
+msgstr "Ancien gestionnaire de cache"
+
+msgid "The former Server Cache (Nginx Helper) module is still loaded: this module handles purges in its place."
+msgstr "L'ancien module Server Cache (Nginx Helper) est encore chargé : ce module gère les purges à sa place."
+
+msgid "Server cache purge"
+msgstr "Purge du cache du serveur"
+
+msgid "reachable"
+msgstr "disponible"
+
+msgid "not reachable (%d)"
+msgstr "indisponible (%d)"
+
+msgid "Cloudflare edge cache"
+msgstr "Cache Cloudflare"
+
+msgid "enabled — purged with the server cache"
+msgstr "activé — purgé avec le cache du serveur"
+
+msgid "not enabled on this site"
+msgstr "non activé sur ce site"
+
+msgid "Object cache"
+msgstr "Cache d'objets"
+
+msgid "persistent (APCu)"
+msgstr "persistant (APCu)"
+
+msgid "none"
+msgstr "aucun"
+
+msgid "Last failed purge"
+msgstr "Dernière purge échouée"
+
+msgid "Posts page"
+msgstr "Page des articles"
+
+msgid "All single pages"
+msgstr "Toutes les pages de contenu"
+
+msgid "Single: %s"
+msgstr "Contenu : %s"
+
+msgid "All listing pages"
+msgstr "Toutes les pages de liste"
+
+msgid "Listing: %s"
+msgstr "Liste : %s"
+
+msgid "All category and tag pages"
+msgstr "Toutes les pages de catégories et d’étiquettes"
+
+msgid "Terms: %s"
+msgstr "Termes : %s"
+
+msgid "Author pages"
+msgstr "Pages des auteurs"
+
+msgid "Search results"
+msgstr "Résultats de recherche"
+
+msgid "Page not found (404)"
+msgstr "Page introuvable (404)"
+
+msgid "Save"
+msgstr "Enregistrer"
+
+msgid "To disable it (wp-config.php)"
+msgstr "Pour la désactiver (wp-config.php)"
+
+msgid "%d day"
+msgid_plural "%d days"
+msgstr[0] "%d jour"
+msgstr[1] "%d jours"
+
+msgid "%d hour"
+msgid_plural "%d hours"
+msgstr[0] "%d heure"
+msgstr[1] "%d heures"
+
+msgid "%d minute"
+msgid_plural "%d minutes"
+msgstr[0] "%d minute"
+msgstr[1] "%d minutes"
+
+msgid "%d second"
+msgid_plural "%d seconds"
+msgstr[0] "%d seconde"
+msgstr[1] "%d secondes"
+
+msgid "%d action of the former module is disabled."
+msgid_plural "%d actions of the former module are disabled."
+msgstr[0] "%d action de l'ancien module est désactivée."
+msgstr[1] "%d actions de l'ancien module sont désactivées."
+
+msgid "Technical details"
+msgstr "Détails techniques"
+
+msgid "no failure recorded"
+msgstr "aucun échec enregistré"
+

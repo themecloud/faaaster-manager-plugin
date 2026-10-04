@@ -33,6 +33,7 @@ FaaasterCacheTtlEmitter → X-Accel-Expires + X-Faaaster-Cache-TTL
 | `integrations/` | WP Rocket, WooCommerce, Elementor, Beaver Builder, optimiseurs, caches tiers ; payants en détection seule |
 | `ttl-rules.php`, `ttl-emitter.php`, `nginx-conf.php` | TTL par contexte |
 | `hostmanager.php`, `cli.php` | `clear_cache` / `flush_object_cache`, WP-CLI |
+| `admin/` | page Réglages › Cache Faaaster, barre d'administration, icônes du DS |
 
 `class/wp-rocket-policy.php` (hors module) : cache de pages de WP Rocket coupé selon `DISABLE_WPROCKET`, préchargement et RUCSS bridés.
 
@@ -64,6 +65,15 @@ Les URL se passent en arguments : `--url` est une option globale de WP-CLI. `wp 
 
 Contextes : `404`, `front_page`, `home`, `singular[:<type>]`, `archive[:<type>]`, `taxonomy[:<taxonomie>]`, `author`, `date`, `search`, `feed`. Le plus précis gagne. Sans règle, **aucun en-tête** : `/app/conf/cache-ttl.user.conf` (10 h) s'applique. Toujours `0` pour `DONOTCACHEPAGE` et les pages panier, commande et compte ; plafond de 11 h si un nonce a été généré pour un visiteur anonyme. `X-Accel-Expires` n'est jamais transmis au visiteur ; `X-Faaaster-Cache-TTL` l'est (ex. `600; rule=front_page`).
 
+## Administration
+
+Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur. Onglets : règles de purge, durées de cache, outils (purger ou tester une adresse, état), journal, intégrations. Toutes les actions passent par `admin-post.php` avec nonce et capacité, puis redirection. Barre d'administration : « Vider le cache » → tout le cache, ou cette page (en front).
+
+- **DS de Next.** `node scripts/sync-ds.mjs [chemin de Next]` (défaut `../next/next`) régénère `assets/ds/tokens.css`, `assets/ds/components.css` (primitives préfixées sous `.fstr-ds`, thème clair seul) et `class/cache/admin/ds-icons.php`. Ne jamais éditer ces fichiers : `assets/admin.css` porte la mise en page locale et la neutralisation de wp-admin (dont `.card` de `common.css` : `max-width: 520px`). Tokens uniquement, aucune couleur en dur (test statique). Comme `Card padded={false}` dans Next, les `.set-row` sont directement dans `.card` ; les champs dans `.card-b`.
+- **Feuilles** chargées uniquement sur `settings_page_faaaster-cache` ; polices : familles du DS si elles sont installées sur le poste, sinon la pile standard du tableau de bord WordPress (`sync-ds.mjs` réécrit `--font-ui`, `--font-display` et `--font-mono`) ; aucun fichier de police embarqué, aucun appel à Google Fonts (décision du 04/10/2026 : ne pas alourdir wp-admin).
+- **Traductions.** Chaînes source en anglais, domaine `faaaster-manager-plugin`, chargé sur `init`. Éditer `languages/*.po` puis `php scripts/build-i18n.php` (`.mo` + `.l10n.php`, sortie déterministe vérifiée en CI). Un test échoue si une chaîne de `class/cache/admin/` n'est pas traduite ou si une entrée est orpheline.
+- **Textes affichés au client** : s'adresser au propriétaire du site, sans renvoyer vers des outils internes ; le détail technique (callbacks du fork retirés) reste replié.
+
 ## API publique
 
 | Hook | Type | Rôle |
@@ -89,4 +99,4 @@ php test/cache/run.php      # sans WordPress ; FC_VERBOSE=1 pour voir les error_
 php test/auth-cookie.php
 ```
 
-CI GitHub : PHP 7.4, 8.2, 8.4, 8.5 (`.github/workflows/tests.yml`).
+CI GitHub : PHP 7.4, 8.2, 8.4, 8.5 (`.github/workflows/tests.yml`), plus la vérification que `languages/` est recompilé.
