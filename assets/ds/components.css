@@ -192,6 +192,16 @@
   font-size: 12.5px;
   border-radius: var(--r-s);
 }
+.fstr-ds .switch-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-right: 2px;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-2);
+  cursor: pointer;
+}
 .fstr-ds .link {
   color: var(--brand-text);
   font-size: 12.5px;

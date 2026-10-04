@@ -26,6 +26,14 @@
           input.disabled = !on;
         }
       }
+      // Interrupteur général : affiche ses réglages dépendants (conservés quand masqués).
+      var dep = sw.getAttribute('data-toggles');
+      if (dep) {
+        var shown = document.getElementById(dep);
+        var off = document.getElementById(dep + '-off');
+        if (shown) shown.hidden = !on;
+        if (off) off.hidden = on;
+      }
     }
   });
 

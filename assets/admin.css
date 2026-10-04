@@ -30,6 +30,11 @@
 .fstr-ds > * + * {
   margin-top: 16px;
 }
+/* Bloc masqué (réglages dépendants d'un interrupteur général coupé) : aucune
+   règle display du DS ou de wp-admin ne doit le réafficher. */
+.fstr-ds [hidden] {
+  display: none !important;
+}
 .fstr-ds .card + .card {
   margin-top: 12px;
 }

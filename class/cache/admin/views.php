@@ -64,9 +64,17 @@ class FaaasterCacheAdminViews
         foreach ($this->public_types() as $type => $object) {
             $rules = $this->cache->cascade()->rules_for($type);
             $name = 'purge[post_types][' . $type . ']';
+            // Interrupteur général dans l'en-tête : il chapeaute la carte. Les pages
+            // liées ne s'affichent que s'il est activé (réglages conservés sinon).
             // Comme Card padded={false} dans Next : les set-row sont directement dans la carte.
-            echo '<div class="card"><div class="card-h">' . faaaster_ds_icon('list-tree') . esc_html($object->labels->name) . '<span class="right"><span class="code">' . esc_html($type) . '</span></span></div>';
-            $this->switch_row($name . '[enabled]', !empty($rules['enabled']), __('Purge related pages', 'faaaster-manager-plugin'), __('Off: only the content itself is purged.', 'faaaster-manager-plugin'));
+            $enabled = !empty($rules['enabled']);
+            $dep = 'fstr-dep-' . preg_replace('/[^a-z0-9_-]/', '-', strtolower($type));
+            $master = __('Cascade purge', 'faaaster-manager-plugin');
+            echo '<div class="card"><div class="card-h">' . faaaster_ds_icon('list-tree') . esc_html($object->labels->name) . ' <span class="code">' . esc_html($type) . '</span><span class="right"><label class="switch-field">';
+            $this->switch_control($name . '[enabled]', '1', $enabled, $master, false, $dep);
+            echo '<span>' . esc_html($master) . '</span></label></span></div>';
+            printf('<div class="card-b" id="%s-off"%s><div class="help">%s</div></div>', esc_attr($dep), $enabled ? ' hidden' : '', esc_html__('Only the page of the content itself is purged when it is published, updated or removed.', 'faaaster-manager-plugin'));
+            printf('<div id="%s"%s>', esc_attr($dep), $enabled ? '' : ' hidden');
             $this->switch_row($name . '[homepage]', !empty($rules['homepage']), __('Home page', 'faaaster-manager-plugin'), __('Turn on if your home page lists this content.', 'faaaster-manager-plugin'));
             $archive = FaaasterCacheCascade::archive_url($type);
             $this->switch_row($name . '[archive]', !empty($rules['archive']), __('Listing page', 'faaaster-manager-plugin'), $archive ? $archive : __('This content type has no listing page.', 'faaaster-manager-plugin'));
@@ -95,7 +103,7 @@ class FaaasterCacheAdminViews
             printf('<div class="ctl"><input class="txt fstr-num" type="number" min="0" max="10" name="%s" value="%d"></div></div>', esc_attr($name . '[paged]'), (int) $rules['paged']);
             echo '<div class="card-b"><div class="field"><label>' . esc_html__('Extra pages to purge (one path per line)', 'faaaster-manager-plugin') . '</label>';
             printf('<textarea class="txt" rows="2" name="%s" placeholder="/page/">%s</textarea></div></div>', esc_attr($name . '[custom_paths]'), esc_textarea(implode("\n", (array) $rules['custom_paths'])));
-            echo '</div>';
+            echo '</div></div>';
         }
 
         $this->section(__('For every change', 'faaaster-manager-plugin'), '');
@@ -390,8 +398,11 @@ class FaaasterCacheAdminViews
         echo '<span>' . esc_html($label) . '</span></label>';
     }
 
-    /** Interrupteur DS (button.switch) + champ caché synchronisé par assets/admin.js. */
-    private function switch_control($name, $value, $on, $label, $small = false)
+    /**
+     * Interrupteur DS (button.switch) + champ caché synchronisé par assets/admin.js.
+     * $toggles : id du bloc affiché quand il est activé (et « id-off » sinon).
+     */
+    private function switch_control($name, $value, $on, $label, $small = false, $toggles = '')
     {
         $multi = substr($name, -2) === '[]';
         printf(
@@ -402,13 +413,14 @@ class FaaasterCacheAdminViews
             esc_attr($multi ? '' : '0')
         );
         printf(
-            '<button type="button" role="switch" class="switch%s%s" aria-checked="%s" data-state="%s" data-value="%s" aria-label="%s"></button>',
+            '<button type="button" role="switch" class="switch%s%s" aria-checked="%s" data-state="%s" data-value="%s" aria-label="%s"%s></button>',
             $small ? ' switch-sm' : '',
             $on ? ' on' : '',
             $on ? 'true' : 'false',
             $on ? 'checked' : 'unchecked',
             esc_attr($value),
-            esc_attr($label)
+            esc_attr($label),
+            $toggles !== '' ? ' data-toggles="' . esc_attr($toggles) . '" aria-controls="' . esc_attr($toggles) . '"' : ''
         );
     }
 

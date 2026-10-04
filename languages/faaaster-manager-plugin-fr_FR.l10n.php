@@ -30,8 +30,6 @@ return array (
     'Purge entire cache' => 'Vider tout le cache',
     'Automatic purge, by content type' => 'Purge automatique, par type de contenu',
     'When a content item is published, updated or removed, it is always purged. These rules add the pages that list it.' => 'Un contenu publié, modifié ou retiré est toujours purgé. Ces règles ajoutent les pages qui le listent.',
-    'Purge related pages' => 'Purger les pages liées',
-    'Off: only the content itself is purged.' => 'Désactivé : seul le contenu lui-même est purgé.',
     'Home page' => 'Page d\'accueil',
     'Turn on if your home page lists this content.' => 'À activer si votre accueil liste ces contenus.',
     'Listing page' => 'Page de liste',
@@ -142,5 +140,7 @@ return array (
     '%d action of the former module is disabled.' . "\0" . '%d actions of the former module are disabled.' => '%d action de l\'ancien module est désactivée.' . "\0" . '%d actions de l\'ancien module sont désactivées.',
     'Technical details' => 'Détails techniques',
     'no failure recorded' => 'aucun échec enregistré',
+    'Cascade purge' => 'Purge en cascade',
+    'Only the page of the content itself is purged when it is published, updated or removed.' => 'Seule la page du contenu elle-même est purgée quand il est publié, modifié ou retiré.',
   ),
 );

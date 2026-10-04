@@ -79,12 +79,6 @@ msgstr "Purge automatique, par type de contenu"
 msgid "When a content item is published, updated or removed, it is always purged. These rules add the pages that list it."
 msgstr "Un contenu publié, modifié ou retiré est toujours purgé. Ces règles ajoutent les pages qui le listent."
 
-msgid "Purge related pages"
-msgstr "Purger les pages liées"
-
-msgid "Off: only the content itself is purged."
-msgstr "Désactivé : seul le contenu lui-même est purgé."
-
 msgid "Home page"
 msgstr "Page d'accueil"
 
@@ -426,4 +420,10 @@ msgstr "Détails techniques"
 
 msgid "no failure recorded"
 msgstr "aucun échec enregistré"
+
+msgid "Cascade purge"
+msgstr "Purge en cascade"
+
+msgid "Only the page of the content itself is purged when it is published, updated or removed."
+msgstr "Seule la page du contenu elle-même est purgée quand il est publié, modifié ou retiré."
 
