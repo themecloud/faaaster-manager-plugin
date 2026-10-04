@@ -45,7 +45,7 @@ FaaasterCacheTtlEmitter → X-Accel-Expires + X-Faaaster-Cache-TTL
 | `FAAASTER_CACHE_TTL_DISABLED` | aucun `X-Accel-Expires` ni diagnostic |
 | `FAAASTER_CACHE_INTEGRATIONS_DISABLED`, `FAAASTER_CACHE_DISABLE_<ID>` | toutes les intégrations, ou une (`WP_ROCKET`, `WOOCOMMERCE`, `ELEMENTOR`…) |
 | `FAAASTER_WP_ROCKET_POLICY_DISABLED` | bridage WP Rocket (le filtre de cache de pages reste régi par `DISABLE_WPROCKET`) |
-| `FAAASTER_HOSTMANAGER_REQUIRE_AUTH` | Bearer obligatoire sur `clear_cache` (P6) |
+| `FAAASTER_HOSTMANAGER_REQUIRE_AUTH` | Bearer obligatoire sur `clear_cache`. Sans elle, un appel sans Bearer valide est accepté mais journalisé (`[faaaster-cache] hostmanager/clear_cache called without a valid Bearer (missing\|invalid\|no_key)`, option `faaaster_cache_hostmanager_auth`, `site_state` → `other_data.cache.clear_cache_unauthenticated`). À poser par défaut une fois `fstr-worker.php` à jour (P8). |
 
 ## WP-CLI
 
@@ -74,6 +74,12 @@ Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur.
 - **Traductions.** Chaînes source en anglais, domaine `faaaster-manager-plugin`, chargé sur `init`. Éditer `languages/*.po` puis `php scripts/build-i18n.php` (`.mo` + `.l10n.php`, sortie déterministe vérifiée en CI). Un test échoue si une chaîne de `class/cache/admin/` n'est pas traduite ou si une entrée est orpheline.
 - **Textes affichés au client** : s'adresser au propriétaire du site, sans renvoyer vers des outils internes ; le détail technique (callbacks du fork retirés) reste replié.
 
+## Suivi par la plateforme
+
+- `site_state` → `other_data.cache` : `module` (`active`/`disabled`), `takeover` (fork repris en main), `ttl_rules`, `purge_rules_customized`, `clear_cache_unauthenticated` (`count`, `last_at`, `last_route`, `last_reason`, `last_agent` ; jamais le jeton).
+- `manager_version` → `capabilities.cacheModule` : module actif, donc `clear_cache` répond `502 purge_failed` en cas d'échec.
+- Appelants de `clear_cache` au 04/10/2026 : consumer `hostmanager.ts` et `fstr-wp-op.sh` envoient le Bearer ; `fstr-worker.php` de wp-builder ne l'envoie pas (ni `Host`) : corrigé en P8.
+
 ## API publique
 
 | Hook | Type | Rôle |
@@ -89,6 +95,7 @@ Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur.
 ## Pièges
 
 - **Object cache APCu : CLI ≠ FPM.** WP-CLI a son propre segment APCu par processus. Le module vide l'object cache de FPM après une purge totale ou un changement de réglages lancés en CLI ; ailleurs, passer par la route `clear_cache`.
+- **`permission_callback` appelé deux fois** par requête REST : WordPress le rejoue dans `rest_send_allow_header` (en-tête `Allow`) avec le même objet requête. Tout effet de bord (journal, compteur) doit être mémorisé par requête.
 - **Ne jamais simuler un hook global** (`do_action('switch_theme')`) sur un site réel : les extensions y réagissent (Elementor efface tous ses CSS).
 - Erreurs du module : `class/error-handler.php` ignore les fichiers du manager-plugin ; le module journalise lui-même (`[faaaster-cache]` dans le log d'erreurs PHP).
 

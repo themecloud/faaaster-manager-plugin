@@ -480,11 +480,13 @@ function faaaster_at_rest_init()
         'permission_callback' => '__return_true',
     ));
 
+    // Bearer WP_API_KEY vérifié et appel sans Bearer valide journalisé (compteur
+    // dans site_state) ; bloquant seulement avec FAAASTER_HOSTMANAGER_REQUIRE_AUTH.
     register_rest_route($namespace, '/clear_cache', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_clear_cache',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => array('FaaasterCacheHostmanager', 'clear_cache_permission'),
     ));
 
     // Appelée en boucle locale par le module cache quand il tourne en CLI : vide

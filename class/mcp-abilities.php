@@ -574,6 +574,8 @@ function faaaster_manager_version()
         'version'      => defined('FAAASTER_MANAGER_VERSION') ? FAAASTER_MANAGER_VERSION : '0',
         'capabilities' => array(
             'ssoJwt' => true,
+            // Module cache actif : clear_cache répond 502 purge_failed en cas d'échec.
+            'cacheModule' => function_exists('faaaster_cache') && faaaster_cache() !== null,
         ),
     );
 }

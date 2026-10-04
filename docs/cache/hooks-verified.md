@@ -429,3 +429,10 @@ Image wp-php84 (contrat 1.21), nginx avec `ngx_cache_purge` 2.5.
 - www.faaaster.io : sans règle → `X-Faaaster-Cache-TTL: default; rule=default`, aucun `X-Accel-Expires` côté client. `wp faaaster cache ttl set front_page 60` → `60; rule=front_page`, MISS → HIT → EXPIRED après 62 s. `ttl set 404 120` → la 2ᵉ requête d'une 404 sort du cache en 3 ms (même contenu).
 - **Piège trouvé** : une règle posée en CLI restait invisible pour PHP-FPM (object cache APCu périmé, cf. incident du même jour) → toute modification des réglages en CLI vide désormais l'object cache de FPM (`faaaster_cache_settings_updated`). Et la clé `'404'` devenait l'entier 404 et était rejetée par l'assainissement → corrigé.
 - Site remis en état ensuite : règles retirées, options `faaaster_cache_settings` / `faaaster_cache_events` supprimées, object cache FPM vidé, version de l'image restaurée.
+
+**Validation P6 — Bearer de `clear_cache` journalisé** (04/10/2026, www.faaaster.io) :
+- Appel au format du consumer (`hostmanager.ts` : Bearer `$WP_API_KEY` + `Host: $SERVER_NAME`) → 200 `ok`, rien n'est journalisé.
+- Appel au format de `fstr-worker.php` (ni Bearer ni `Host`) → toujours accepté (200 `ok`), une ligne `[faaaster-cache] hostmanager/clear_cache called without a valid Bearer (missing)` dans le log FPM (stderr du conteneur `php`), compteur +1 dans `faaaster_cache_hostmanager_auth`, visible dans `site_state` → `other_data.cache`.
+- **Piège trouvé** : le premier essai comptait 2 par appel. WordPress 7.0.4 rappelle le `permission_callback` dans `rest_send_allow_header` (`wp-includes/rest-api.php`, ~l. 892) avec le même `WP_REST_Request` → décision mémorisée par objet requête (`SplObjectStorage`).
+- `manager_version` → `capabilities.cacheModule: true` ; `takeover: true` (fork 3.2.9 de l'image repris en main).
+- Remis en état : version de l'image restaurée, options `faaaster_cache_settings`, `faaaster_cache_hostmanager_auth`, `faaaster_cache_events` supprimées, 14/14 CSS Elementor en 200.

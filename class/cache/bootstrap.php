@@ -44,6 +44,28 @@ function faaaster_is_hostmanager_request()
 }
 
 /**
+ * Résumé pour site_state (other_data.cache), lu par Next et le support. Aucun
+ * secret ; module désactivé : rien n'est lu (pas d'initialisation des réglages).
+ */
+function faaaster_cache_state()
+{
+    $cache = faaaster_cache();
+    $state = array(
+        'module' => $cache ? 'active' : 'disabled',
+        'takeover' => $cache ? (bool) $cache->context('takeover') : false,
+        'ttl_rules' => 0,
+        'purge_rules_customized' => false,
+        'clear_cache_unauthenticated' => FaaasterCacheHostmanager::auth_stats(),
+    );
+    if ($cache) {
+        $defaults = FaaasterCacheSettings::defaults();
+        $state['ttl_rules'] = count((array) $cache->settings()->get('ttl', 'rules', array()));
+        $state['purge_rules_customized'] = $cache->settings()->get('purge') != $defaults['purge'];
+    }
+    return $state;
+}
+
+/**
  * Démarre le module. Kill switch : FAAASTER_CACHE_MODULE_DISABLED dans wp-config.php.
  */
 function faaaster_cache_boot(array $args)

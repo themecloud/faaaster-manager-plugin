@@ -179,7 +179,8 @@ class SiteState
                         'config' => self::check_fs_configs() ? 1 : 0
                     ),
                     "is_network"      => ((is_multisite()) ? 1 : 0),
-                    "blog_id"         => $blog_id
+                    "blog_id"         => $blog_id,
+                    "cache"           => function_exists('faaaster_cache_state') ? faaaster_cache_state() : null
                 ),
                 "is_network"          => ((is_multisite()) ? 1 : 0),
                 "debug_mode"     => $debug_mode,
