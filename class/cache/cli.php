@@ -23,10 +23,7 @@ class FaaasterCacheCli
      * ## OPTIONS
      *
      * [<url>...]
-     * : URL à purger.
-     *
-     * [--url=<url>]
-     * : URL à purger (forme alternative).
+     * : URL à purger (en arguments : `--url` est une option globale de WP-CLI).
      *
      * [--all]
      * : Purge tout le cache de pages.
@@ -50,9 +47,6 @@ class FaaasterCacheCli
             return;
         }
         $urls = $args;
-        if (!empty($assoc_args['url'])) {
-            $urls[] = $assoc_args['url'];
-        }
         if (empty($urls)) {
             WP_CLI::error('Give at least one URL, or --all.');
         }

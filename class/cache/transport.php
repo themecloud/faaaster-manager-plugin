@@ -5,7 +5,10 @@
  */
 interface FaaasterCacheTransportInterface
 {
-    /** @return array ['status' => int, 'ms' => int, 'error' => string|null] */
+    /**
+     * 200 = purgé, 412 = absent du cache, 403 = garde loopback refusée.
+     * @return array ['status' => int, 'ms' => int, 'error' => string|null]
+     */
     public function purge_path($host, $path);
 
     /** @return array ['status' => int, 'ms' => int, 'error' => string|null] */

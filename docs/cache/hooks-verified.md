@@ -391,3 +391,27 @@ Notes :
 - `save_layout` appelle `delete_all_asset_cache( $post_id )`, puis `wp_update_post` (:6479-6483), donc les hooks WP de post, puis `FLBuilder::render_assets()`, avant `fl_builder_after_save_layout`.
 - `after_save_layout` est donc émis après la régénération des assets.
 - Exemple de référence : LiteSpeed purge tout sur `fl_builder_cache_cleared`, `fl_builder_after_save_layout`, `fl_builder_after_save_user_template` et `upgrader_process_complete` (litespeed-cache/thirdparty/beaver-builder.cls.php:36-45).
+
+## Mesures sur le site de test (www.faaaster.io, inst103480, 04/10/2026)
+
+Image wp-php84 (contrat 1.21), nginx avec `ngx_cache_purge` 2.5.
+
+| Mesure | Résultat |
+|---|---|
+| `GET /purge/<path>` sur une page **en cache** | **200** |
+| `GET /purge/<path>` sur une page **absente** du cache | **412** (pas 404) : traité comme normal par le module |
+| `GET /purge/` (accueil, réécrit en `/purge/index.php`) | 200, la page repasse en MISS |
+| `GET /purge-all` | 200 en 0,29 s pour 79 fichiers / 24 Mo |
+| 200 + `X-Accel-Expires: 30` | MISS → HIT → EXPIRED après 32 s : TTL respecté |
+| 200 + `X-Accel-Expires: 0` | jamais mis en cache |
+| 404 + `X-Accel-Expires: 30` | **mis en cache** (même corps à la 2ᵉ requête) puis renouvelé après 32 s |
+| 404 sans en-tête | jamais mis en cache (`cache-ttl.user.conf` ne cite que 200/302) |
+| `X-Accel-Expires` côté client | jamais transmis |
+| `X-FastCGI-Cache` sur une 404 | **absent** (`add_header` sans `always`) : le diagnostic du module passe par son propre en-tête |
+
+**Purges du fork en production (log d'accès depuis le 23/09) :** 914 × 412 sur `/purge/?p=<id>` (brouillons, jamais en cache), 2 × 403 sur `/purge`, **aucune** purge d'une vraie page ni purge totale.
+
+**Validation du socle P1** (fichiers de la branche posés temporairement, version de l'image restaurée ensuite) :
+`wp faaaster cache purge <url>` → nginx 200 + 1 lot Cloudflare 200 ; `hostmanager/v1/clear_cache` (appel identique au consumer) → `{"code":"ok"}`, FastCGI 200 (9 ms), **un seul** appel Cloudflare (200, 549 ms), object cache et opcache vidés.
+
+**WP-CLI :** `--url` est une option globale de WP-CLI, consommée avant la commande : les URL se passent en arguments (`wp faaaster cache purge <url>…`).

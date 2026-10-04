@@ -186,8 +186,7 @@ class FaaasterCachePurgeQueue
             foreach (FaaasterCacheUrl::purge_paths($parsed, $site['home_path']) as $path) {
                 $r = $this->transport->purge_path($parsed['host'], $path);
                 $statuses[$r['status']] = isset($statuses[$r['status']]) ? $statuses[$r['status']] + 1 : 1;
-                // 200 = purgé, 404 = absent du cache : les deux sont normaux.
-                if ($r['status'] !== 200 && $r['status'] !== 404) {
+                if (!self::purge_status_ok($r['status'])) {
                     $ok = false;
                 }
                 if ((microtime(true) - $start) * 1000 > self::NGINX_BUDGET_MS) {
@@ -205,6 +204,16 @@ class FaaasterCachePurgeQueue
             'ok' => $ok,
             'escalated' => false,
         );
+    }
+
+    /**
+     * Statuts de /purge/<path> (ngx_cache_purge 2.5) : 200 = purgé,
+     * 412 = clé absente du cache (mesuré sur www.faaaster.io le 04/10/2026),
+     * 404 = toléré. 403 = garde allow 127.0.0.1 non satisfaite, 0 = transport.
+     */
+    public static function purge_status_ok($status)
+    {
+        return $status === 200 || $status === 412 || $status === 404;
     }
 
     /** Programme le vidage en fin de requête ; après le shutdown, vide tout de suite. */

@@ -42,12 +42,14 @@ for ($i = 0; $i < 11; $i++) {
 do_action('shutdown');
 fc_check('escalation to purge-all over threshold', array($t->count('all'), $t->count('path')), array(1, 0));
 
-// 404 = absent du cache : normal ; 403 = erreur de configuration.
-list($cache, $t, $cf) = faaaster_test_boot();
-$t->path_status = 404;
-$cache->queue()->enqueue_url('https://example.com/x/', 'test');
-$r = $cache->queue()->flush(true);
-fc_check('404 counts as ok', $r['ok'], true);
+// 412 = clé absente (ngx_cache_purge), 404 toléré ; 403 = erreur de configuration.
+foreach (array(412, 404) as $absent) {
+    list($cache, $t, $cf) = faaaster_test_boot();
+    $t->path_status = $absent;
+    $cache->queue()->enqueue_url('https://example.com/x/', 'test');
+    $r = $cache->queue()->flush(true);
+    fc_check("{$absent} (absent from cache) counts as ok", $r['ok'], true);
+}
 list($cache, $t, $cf) = faaaster_test_boot();
 $t->path_status = 403;
 $cache->queue()->enqueue_url('https://example.com/x/', 'test');
