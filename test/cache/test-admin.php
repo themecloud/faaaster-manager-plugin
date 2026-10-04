@@ -58,6 +58,9 @@ foreach (FaaasterCacheAdmin::TABS as $tab) {
     fc_check("render {$tab}: active tab", strpos($html, 'aria-selected="true"') !== false, true);
 }
 $html = fc_admin_render($cache, 'rules');
+fc_check('toolbar: tabs and purge-all on the same line', (bool) preg_match('#<div class="toolbar"><div class="seg fstr-tabs".*?</div><form [^>]*class="fstr-push"[^>]*>.*?faaaster_cache_purge_all.*?</form></div>#s', $html), true);
+fc_check('page header carries no action', (bool) preg_match('#<div class="page-h">(?:(?!</div></div></div>).)*<form#s', $html), false);
+fc_check('no white-on-white secondary button in cards', strpos(file_get_contents(__DIR__ . '/../../class/cache/admin/views.php'), 'btn-secondary'), false);
 fc_check('rules: attachment not listed', strpos($html, 'purge[post_types][attachment]'), false);
 fc_check('rules: CPT listed', strpos($html, 'purge[post_types][book][enabled]') !== false, true);
 fc_check('rules: taxonomy chips are list fields', strpos($html, 'name="purge[post_types][post][taxonomies][]"') !== false, true);
@@ -65,6 +68,7 @@ $html = fc_admin_render($cache, 'ttl');
 fc_check('ttl: CPT archive context', strpos($html, 'ttl[rules][archive:book][value]') !== false, true);
 fc_check('ttl: no archive context without has_archive', strpos($html, 'ttl[rules][archive:page]'), false);
 fc_check('ttl: 404 context', strpos($html, 'ttl[rules][404][value]') !== false, true);
+fc_check('ttl: duration column right-aligned (header + cells)', substr_count($html, 'class="fstr-end"') > 10, true);
 $html = fc_admin_render($cache, 'tools');
 fc_check('tools: health probe on the purge route', $GLOBALS['fta']['remote_calls'][0][0], 'http://127.0.0.1/purge/__faaaster_health__');
 fc_check('tools: 412 = reachable', strpos($html, 'reachable') !== false && strpos($html, 'not reachable') === false, true);

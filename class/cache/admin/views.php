@@ -25,17 +25,14 @@ class FaaasterCacheAdminViews
         );
         echo '<div class="wrap fstr-ds-wrap"><div class="fstr-ds">';
         echo '<div class="page-h"><div><div class="eyebrow">Faaaster</div><h1>' . esc_html__('Page cache', 'faaaster-manager-plugin') . '</h1>';
-        echo '<div class="sub">' . esc_html__('Your pages are served from the server cache and, when enabled, from the Cloudflare edge. They are purged automatically when your content changes.', 'faaaster-manager-plugin') . '</div></div>';
-        echo '<div class="actions">';
-        $this->form_open('purge_all', $tab, 'data-confirm="' . esc_attr__('Purge the whole page cache? Pages will be rebuilt on their next visit.', 'faaaster-manager-plugin') . '"');
-        echo '<button type="submit" class="btn btn-primary">' . faaaster_ds_icon('refresh-cw') . esc_html__('Purge entire cache', 'faaaster-manager-plugin') . '</button></form>';
-        echo '</div></div>';
+        echo '<div class="sub">' . esc_html__('Your pages are served from the server cache and, when enabled, from the Cloudflare edge. They are purged automatically when your content changes.', 'faaaster-manager-plugin') . '</div></div></div>';
 
         if ($notice) {
             $this->alert($notice['type'] === 'ok' ? 'info' : 'danger', $notice['message']);
         }
 
-        echo '<div class="seg fstr-tabs" role="tablist">';
+        // Onglets et purge totale sur la même ligne (.toolbar du DS).
+        echo '<div class="toolbar"><div class="seg fstr-tabs" role="tablist">';
         foreach ($tabs as $id => $def) {
             printf(
                 '<button type="button" role="tab" class="%s" data-href="%s" aria-selected="%s">%s%s</button>',
@@ -46,6 +43,9 @@ class FaaasterCacheAdminViews
                 esc_html($def[1])
             );
         }
+        echo '</div>';
+        $this->form_open('purge_all', $tab, 'class="fstr-push" data-confirm="' . esc_attr__('Purge the whole page cache? Pages will be rebuilt on their next visit.', 'faaaster-manager-plugin') . '"');
+        echo '<button type="submit" class="btn btn-primary">' . faaaster_ds_icon('refresh-cw') . esc_html__('Purge entire cache', 'faaaster-manager-plugin') . '</button></form>';
         echo '</div>';
 
         $method = 'tab_' . $tab;
@@ -126,14 +126,14 @@ class FaaasterCacheAdminViews
         echo '</tbody></table></div></div>';
 
         $this->section(__('Duration by page type', 'faaaster-manager-plugin'), __('Leave empty to use the default duration. 0 keeps the page out of the cache.', 'faaaster-manager-plugin'));
-        echo '<div class="card"><table class="table"><thead><tr><th>' . esc_html__('Page type', 'faaaster-manager-plugin') . '</th><th>' . esc_html__('Duration', 'faaaster-manager-plugin') . '</th></tr></thead><tbody>';
+        echo '<div class="card"><table class="table"><thead><tr><th>' . esc_html__('Page type', 'faaaster-manager-plugin') . '</th><th class="fstr-end">' . esc_html__('Duration', 'faaaster-manager-plugin') . '</th></tr></thead><tbody>';
         foreach ($this->ttl_contexts() as $context => $label) {
             $value = '';
             $unit = 'h';
             if (array_key_exists($context, $rules)) {
                 list($value, $unit) = self::split_duration((int) $rules[$context]);
             }
-            printf('<tr class="row-static"><td>%s <span class="code">%s</span></td><td><div class="fstr-dur">', esc_html($label), esc_html($context));
+            printf('<tr class="row-static"><td>%s <span class="code">%s</span></td><td class="fstr-end"><div class="fstr-dur">', esc_html($label), esc_html($context));
             printf('<input class="txt fstr-num" type="number" min="0" step="any" name="ttl[rules][%1$s][value]" value="%2$s" placeholder="%3$s">', esc_attr($context), esc_attr($value), esc_attr__('default', 'faaaster-manager-plugin'));
             printf('<select class="txt" name="ttl[rules][%s][unit]">', esc_attr($context));
             foreach (array('s' => __('seconds', 'faaaster-manager-plugin'), 'm' => __('minutes', 'faaaster-manager-plugin'), 'h' => __('hours', 'faaaster-manager-plugin'), 'd' => __('days', 'faaaster-manager-plugin')) as $u => $u_label) {
@@ -163,7 +163,7 @@ class FaaasterCacheAdminViews
         $this->form_open('purge_url', 'tools');
         echo '<div class="field"><label>' . esc_html__('Address', 'faaaster-manager-plugin') . '</label><div class="fstr-inline">';
         printf('<input class="txt" type="url" name="url" required placeholder="%s">', esc_attr($home));
-        echo '<button type="submit" class="btn btn-secondary">' . faaaster_ds_icon('refresh-cw') . esc_html__('Purge', 'faaaster-manager-plugin') . '</button></div></div></form>';
+        echo '<button type="submit" class="btn btn-primary">' . faaaster_ds_icon('refresh-cw') . esc_html__('Purge', 'faaaster-manager-plugin') . '</button></div></div></form>';
         echo '</div></div>';
 
         $this->section(__('Test an address', 'faaaster-manager-plugin'), __('Loads the page twice as an anonymous visitor and shows how the server cache answers.', 'faaaster-manager-plugin'));
@@ -171,7 +171,7 @@ class FaaasterCacheAdminViews
         $this->form_open('test_url', 'tools');
         echo '<div class="field"><label>' . esc_html__('Address', 'faaaster-manager-plugin') . '</label><div class="fstr-inline">';
         printf('<input class="txt" type="url" name="url" required placeholder="%s">', esc_attr($home));
-        echo '<button type="submit" class="btn btn-secondary">' . faaaster_ds_icon('search') . esc_html__('Test', 'faaaster-manager-plugin') . '</button></div></div></form>';
+        echo '<button type="submit" class="btn btn-primary">' . faaaster_ds_icon('search') . esc_html__('Test', 'faaaster-manager-plugin') . '</button></div></div></form>';
         $key = 'faaaster_cache_test_' . get_current_user_id();
         $test = get_transient($key);
         if ($test) {

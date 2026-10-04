@@ -22,7 +22,7 @@ const SCOPE = '.fstr-ds';
 const PRIMITIVES = [
   'page-h', 'section-h', 'eyebrow', 'card', 'card-h', 'card-b', 'kv', 'set-row', 'seg',
   'switch', 'field', 'txt', 'help', 'btn', 'icon-btn', 'link', 'badge', 'sdot', 'alert',
-  'meter', 'spinner', 'table', 'pager', 'code', 'mono',
+  'meter', 'spinner', 'table', 'pager', 'code', 'mono', 'toolbar',
   // Variantes définies comme classes autonomes.
   'btn-primary', 'btn-secondary', 'btn-ghost', 'btn-danger', 'btn-accent', 'btn-warn', 'btn-sm',
   'alert-info', 'alert-warn', 'alert-danger',

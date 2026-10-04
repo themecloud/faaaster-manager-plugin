@@ -77,8 +77,17 @@
 }
 
 /* Mise en page locale (aucune primitive équivalente dans le DS). */
+.fstr-ds .toolbar {
+  margin-bottom: 0;
+}
 .fstr-ds .fstr-tabs {
-  flex-wrap: wrap;
+  padding: 3px;
+}
+.fstr-ds .fstr-tabs button {
+  padding: 5px 12px;
+}
+.fstr-ds .fstr-push {
+  margin-left: auto;
 }
 .fstr-ds .fstr-inline {
   display: flex;
@@ -96,6 +105,11 @@
   display: flex;
   gap: 6px;
   align-items: center;
+  justify-content: flex-end;
+}
+/* Colonne de contrôles alignée à droite (Next : textAlign right en ligne). */
+.fstr-ds .table .fstr-end {
+  text-align: right;
 }
 .fstr-ds .fstr-wrap {
   display: flex;
@@ -112,6 +126,7 @@
 .fstr-ds .fstr-submit {
   display: flex;
   justify-content: flex-end;
+  margin-top: 16px;
 }
 .fstr-ds .fstr-details {
   margin-top: 8px;

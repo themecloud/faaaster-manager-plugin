@@ -1,6 +1,6 @@
 <?php
 
-/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@cfa9da5b (components/ds/icons.tsx) — NE PAS ÉDITER. */
+/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@f7a43fcb (components/ds/icons.tsx) — NE PAS ÉDITER. */
 
 /** Icône lucide du DS Faaaster (tracés de components/ds/icons.tsx). */
 function faaaster_ds_icon($name, $size = 16)

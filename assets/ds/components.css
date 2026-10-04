@@ -1,4 +1,4 @@
-/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@cfa9da5b (styles/ds/components.css) — NE PAS ÉDITER. */
+/* GÉNÉRÉ par scripts/sync-ds.mjs depuis next@f7a43fcb (styles/ds/components.css) — NE PAS ÉDITER. */
 .fstr-ds .mono,
 .fstr-ds .code {
   font-family: var(--font-mono);
@@ -324,6 +324,13 @@
 }
 .fstr-ds .meter i.ok {
   background: var(--green);
+}
+.fstr-ds .toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
 }
 .fstr-ds .seg {
   display: inline-flex;
@@ -717,7 +724,29 @@
 .fstr-ds .table {
     min-width: 560px;
   }
-.fstr-ds .card:has(> .table) {
+.fstr-ds .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+.fstr-ds .toolbar .seg {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+.fstr-ds .toolbar .seg::-webkit-scrollbar {
+    display: none;
+  }
+.fstr-ds .toolbar .seg button {
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+.fstr-ds .toolbar .input {
+    margin-left: 0 !important;
+    width: 100% !important;
+  }
+.fstr-ds .card:has(> .table),
+.fstr-ds .toolbar .seg {
     background: linear-gradient(to right, var(--surface), transparent) 0 0 /
         34px 100% no-repeat local,
       linear-gradient(to left, var(--surface), transparent) 100% 0 / 34px 100%
