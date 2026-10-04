@@ -13,6 +13,12 @@ interface FaaasterCacheTransportInterface
 
     /** @return array ['status' => int, 'ms' => int, 'error' => string|null] */
     public function purge_all($host);
+
+    /**
+     * Vide l'object cache côté PHP-FPM (route hostmanager/v1/flush_object_cache).
+     * @return array ['status' => int, 'ms' => int, 'error' => string|null]
+     */
+    public function flush_object_cache($host);
 }
 
 class FaaasterCacheTransport implements FaaasterCacheTransportInterface
@@ -31,7 +37,26 @@ class FaaasterCacheTransport implements FaaasterCacheTransportInterface
         return $this->get(self::BASE . '/purge-all', $host, 10000);
     }
 
+    /**
+     * WP-CLI a son propre segment APCu (apc.enable_cli=1, un par processus) : ce
+     * qu'il écrit ou efface n'atteint pas l'object cache APCu de PHP-FPM. Après un
+     * changement global lancé en CLI, on fait vider celui de FPM.
+     */
+    public function flush_object_cache($host)
+    {
+        $headers = array();
+        if (defined('WP_API_KEY') && WP_API_KEY) {
+            $headers[] = 'Authorization: Bearer ' . WP_API_KEY;
+        }
+        return $this->request('POST', self::BASE . '/?rest_route=/hostmanager/v1/flush_object_cache', $host, 5000, $headers);
+    }
+
     private function get($url, $host, $timeout_ms)
+    {
+        return $this->request('GET', $url, $host, $timeout_ms, array());
+    }
+
+    private function request($method, $url, $host, $timeout_ms, array $extra_headers)
     {
         $start = microtime(true);
         if (!function_exists('curl_init')) {
@@ -41,9 +66,15 @@ class FaaasterCacheTransport implements FaaasterCacheTransportInterface
             $this->handle = curl_init();
         }
         $ch = $this->handle;
+        // Le handle est réutilisé : on repositionne la méthode à chaque appel.
+        if ($method === 'POST') {
+            curl_setopt($ch, CURLOPT_POST, true);
+            curl_setopt($ch, CURLOPT_POSTFIELDS, '');
+        } else {
+            curl_setopt($ch, CURLOPT_HTTPGET, true);
+        }
         curl_setopt_array($ch, array(
             CURLOPT_URL => $url,
-            CURLOPT_HTTPGET => true,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HEADER => false,
             CURLOPT_FOLLOWLOCATION => false,
@@ -53,10 +84,10 @@ class FaaasterCacheTransport implements FaaasterCacheTransportInterface
             // La porte privé/essai laisse passer ce cookie (nginx-snippets/private) :
             // sans lui, une purge sur un site privé recevrait la redirection de la porte.
             CURLOPT_COOKIE => 'trial_bypass=true',
-            CURLOPT_HTTPHEADER => array(
+            CURLOPT_HTTPHEADER => array_merge(array(
                 'Host: ' . $host,
                 'User-Agent: Faaaster-Cache-Purger/1.0',
-            ),
+            ), $extra_headers),
         ));
         curl_exec($ch);
         $status = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);

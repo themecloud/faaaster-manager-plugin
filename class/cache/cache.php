@@ -18,6 +18,7 @@ final class FaaasterCache
     private $hostmanager;
     private $cloudflare;
     private $cascade;
+    private $integrations;
 
     /**
      * @param array $args cloudflare, cf_enabled, hostmanager ; pour les tests :
@@ -47,7 +48,7 @@ final class FaaasterCache
     {
         $this->context = array(
             'hostmanager' => !empty($args['hostmanager']),
-            'cli' => defined('WP_CLI') && WP_CLI,
+            'cli' => isset($args['cli']) ? (bool) $args['cli'] : (defined('WP_CLI') && WP_CLI),
             'fork_present' => self::fork_present(),
         );
         $this->cloudflare = isset($args['cloudflare']) ? $args['cloudflare'] : null;
@@ -61,7 +62,8 @@ final class FaaasterCache
             !empty($args['cf_enabled']),
             $this->events,
             $this->settings,
-            $site_provider
+            $site_provider,
+            $this->context['cli']
         );
         $this->hostmanager = new FaaasterCacheHostmanager($this->queue);
     }
@@ -80,6 +82,11 @@ final class FaaasterCache
         $listener->register();
         $triggers = new FaaasterCacheGlobalTriggers($this);
         $triggers->register();
+        $this->integrations = new FaaasterCacheIntegrationRegistry($this);
+        // Requêtes hostmanager : extensions et thème non chargés, rien à adapter.
+        if (!$this->context['hostmanager']) {
+            $this->integrations->register();
+        }
         if ($this->context['cli']) {
             FaaasterCacheCli::register();
         }
@@ -88,6 +95,11 @@ final class FaaasterCache
     public function cascade()
     {
         return $this->cascade;
+    }
+
+    public function integrations()
+    {
+        return $this->integrations;
     }
 
     /**

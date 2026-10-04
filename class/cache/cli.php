@@ -72,6 +72,8 @@ class FaaasterCacheCli
             'fork_loaded' => class_exists('Nginx_Helper', false),
             'takeover' => $cache ? (bool) $cache->context('takeover') : false,
             'takeover_removed' => FaaasterCacheTakeover::removed(),
+            'integrations' => $cache && $cache->integrations() ? $cache->integrations()->status() : array(),
+            'third_party_page_cache' => FaaasterCacheIntegrationRegistry::third_party_page_cache(),
             'settings' => $cache ? $cache->settings()->all() : null,
         ), JSON_PRETTY_PRINT));
     }

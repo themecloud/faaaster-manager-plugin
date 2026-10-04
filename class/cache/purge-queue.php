@@ -19,6 +19,7 @@ class FaaasterCachePurgeQueue
     private $settings;
     private $site_provider;
     private $site = null;
+    private $cli = false;
 
     private $urls = array();
     private $cf_urls = array();
@@ -32,8 +33,9 @@ class FaaasterCachePurgeQueue
      * @param object|null $cloudflare client exposant purgeEverything() / purgeUrlList()
      * @param callable $site_provider renvoie ['home_url' => string, 'hosts' => string[]]
      */
-    public function __construct($transport, $cloudflare, $cf_enabled, FaaasterCacheEvents $events, FaaasterCacheSettings $settings, $site_provider)
+    public function __construct($transport, $cloudflare, $cf_enabled, FaaasterCacheEvents $events, FaaasterCacheSettings $settings, $site_provider, $cli = false)
     {
+        $this->cli = (bool) $cli;
         $this->transport = $transport;
         $this->cloudflare = $cloudflare;
         $this->cf_enabled = (bool) $cf_enabled;
@@ -112,7 +114,7 @@ class FaaasterCachePurgeQueue
      */
     public function flush($forced = false)
     {
-        $report = array('mode' => 'none', 'ok' => true, 'nginx' => array(), 'cloudflare' => null);
+        $report = array('mode' => 'none', 'ok' => true, 'nginx' => array(), 'cloudflare' => null, 'object_cache_fpm' => null);
         if (!$this->has_pending()) {
             return $report;
         }
@@ -134,6 +136,13 @@ class FaaasterCachePurgeQueue
         }
         $report['ok'] = !empty($report['nginx']['ok']);
 
+        // Changement global lancé en CLI (mise à jour par WP-CLI, wp elementor
+        // flush-css…) : l'object cache de PHP-FPM n'a rien vu, on le fait vider.
+        // Incident www.faaaster.io du 04/10/2026 (option Elementor périmée).
+        if ($this->all && $this->cli) {
+            $report['object_cache_fpm'] = $this->transport->flush_object_cache($site['home_host']);
+        }
+
         if ($this->cf_enabled && $this->cloudflare) {
             $report['cloudflare'] = $this->all
                 ? $this->cloudflare->purgeEverything()
@@ -149,6 +158,7 @@ class FaaasterCachePurgeQueue
             'result' => array(
                 'nginx' => $report['nginx'],
                 'cloudflare' => $report['cloudflare'],
+                'object_cache_fpm' => $report['object_cache_fpm'],
             ),
         ));
         $this->events->persist();

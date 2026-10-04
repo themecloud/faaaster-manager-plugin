@@ -66,6 +66,11 @@ function get_current_user_id()
     return $GLOBALS['faaaster_test']['user_id'];
 }
 
+function __return_false()
+{
+    return false;
+}
+
 function wp_doing_cron()
 {
     return false;

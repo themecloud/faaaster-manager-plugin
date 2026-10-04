@@ -99,7 +99,13 @@ require_once(__DIR__ . '/class/auth-cookie.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
+require_once(__DIR__ . '/class/wp-rocket-policy.php');
 require_once(__DIR__ . '/class/cache/bootstrap.php');
+
+// Politique plateforme WP Rocket (cache de pages coupé, préchargement/RUCSS
+// bridés) : hors de l'interrupteur du module cache, comme l'ancien mu-plugin
+// faaaster-wp-rocket.php qu'elle remplace.
+FaaasterWpRocketPolicy::register();
 
 
 $siteState = new SiteState();
@@ -479,6 +485,21 @@ function faaaster_at_rest_init()
         'callback'  => 'faaaster_clear_cache',
         'args' => array(),
         'permission_callback' => '__return_true',
+    ));
+
+    // Appelée en boucle locale par le module cache quand il tourne en CLI : vide
+    // l'object cache de PHP-FPM (WP-CLI a son propre segment APCu). Bearer exigé.
+    register_rest_route($namespace, '/flush_object_cache', array(
+        'methods'   => WP_REST_Server::CREATABLE,
+        'callback'  => function ($request) {
+            if (faaaster_cache()) {
+                return faaaster_cache()->hostmanager()->rest_flush_object_cache($request);
+            }
+            wp_cache_flush();
+            return new WP_REST_Response(array('code' => 'ok'), 200);
+        },
+        'args' => array(),
+        'permission_callback' => array('FaaasterCacheHostmanager', 'bearer_ok'),
     ));
 
     register_rest_route($namespace, '/toggle_email', array(

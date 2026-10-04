@@ -23,6 +23,12 @@ class FaaasterTestTransport implements FaaasterCacheTransportInterface
         return array('status' => $this->all_status, 'ms' => 1, 'error' => null);
     }
 
+    public function flush_object_cache($host)
+    {
+        $this->calls[] = array('object_cache', $host, null);
+        return array('status' => 200, 'ms' => 1, 'error' => null);
+    }
+
     /** Chemins purgés (ordre d'appel). */
     public function paths()
     {

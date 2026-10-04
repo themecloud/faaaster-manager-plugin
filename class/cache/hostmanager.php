@@ -30,6 +30,32 @@ class FaaasterCacheHostmanager
     }
 
     /**
+     * hostmanager/v1/flush_object_cache : vide l'object cache DANS PHP-FPM, pour
+     * le module quand il tourne en CLI (segment APCu séparé). Pas d'opcache.
+     */
+    public function rest_flush_object_cache($request = null)
+    {
+        if (function_exists('wp_cache_flush')) {
+            wp_cache_flush();
+        }
+        return new WP_REST_Response(array('code' => 'ok'), 200);
+    }
+
+    /** Bearer WP_API_KEY obligatoire (comparaison en temps constant). */
+    public static function bearer_ok($request)
+    {
+        $expected = defined('WP_API_KEY') ? (string) WP_API_KEY : '';
+        if ($expected === '' || !is_object($request) || !method_exists($request, 'get_header')) {
+            return false;
+        }
+        $header = (string) $request->get_header('Authorization');
+        if (!preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
+            return false;
+        }
+        return hash_equals($expected, trim($m[1]));
+    }
+
+    /**
      * Réponse honnête : 502 purge_failed si la purge FastCGI n'a pas abouti
      * (le consumer en fait un avertissement, Next un message d'erreur client).
      */
