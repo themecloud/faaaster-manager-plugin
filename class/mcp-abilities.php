@@ -493,7 +493,13 @@ function faaaster_agent_build_rest_catalog()
 
 function faaaster_agent_register_routes()
 {
-    $localhost = array('permission_callback' => '__return_true'); // localhost-only (worker only)
+    // localhost-only (nginx) + garde commune hostmanager : Bearer WP_API_KEY
+    // vérifié, appel sans Bearer journalisé (bloquant avec
+    // FAAASTER_HOSTMANAGER_REQUIRE_AUTH). Le pont du consumer et fstr-worker
+    // envoient le Bearer.
+    $localhost = function ($route) {
+        return array('permission_callback' => faaaster_hostmanager_guard('faaaster-agent/' . $route));
+    };
 
     // DISCOVERY (proxy-reachable): serves the CACHED catalogue, under the
     // hostmanager namespace so it reaches Next via the infrapi/hostmanager proxy
@@ -504,14 +510,14 @@ function faaaster_agent_register_routes()
     register_rest_route('hostmanager/v1', '/list_abilities', array(
         'methods'             => WP_REST_Server::READABLE,
         'callback'            => 'faaaster_agent_rest_list',
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('list_abilities'),
     ));
     // DISCOVERY (proxy-reachable): the cached REST surface catalogue (auto-derived
     // tool surface). Same cheap cached-option read as list_abilities.
     register_rest_route('hostmanager/v1', '/list_rest_routes', array(
         'methods'             => WP_REST_Server::READABLE,
         'callback'            => 'faaaster_agent_rest_routes_list',
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('list_rest_routes'),
     ));
     // Per-user execution binding discovery. The hostmanager bridge authenticates
     // the Faaaster caller; only bounded non-sensitive fields leave WordPress.
@@ -530,13 +536,13 @@ function faaaster_agent_register_routes()
     register_rest_route('hostmanager/v1', '/manager_version', array(
         'methods'             => WP_REST_Server::READABLE,
         'callback'            => 'faaaster_manager_version',
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('manager_version'),
     ));
 
     // EXECUTION (localhost-only): reads use the global administrator; mutations
     // require an explicit per-request WordPress user. Reached ONLY by the in-pod
     // worker over 127.0.0.1 — never the external proxy.
-    register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost, array(
+    register_rest_route('faaaster-agent/v1', '/abilities/run', array_merge($localhost('abilities/run'), array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_run',
     )));
@@ -546,15 +552,15 @@ function faaaster_agent_register_routes()
     // route's permission_callback. Read/write classification + namespace trust +
     // write approval are decided UPSTREAM by the Next broker; here we execute +
     // re-enforce a defensive `readOnly` guard. Localhost-only (worker only).
-    register_rest_route('faaaster-agent/v1', '/rest', array_merge($localhost, array(
+    register_rest_route('faaaster-agent/v1', '/rest', array_merge($localhost('rest'), array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_proxy',
     )));
-    register_rest_route('faaaster-agent/v1', '/enable', array_merge($localhost, array(
+    register_rest_route('faaaster-agent/v1', '/enable', array_merge($localhost('enable'), array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_enable',
     )));
-    register_rest_route('faaaster-agent/v1', '/disable', array_merge($localhost, array(
+    register_rest_route('faaaster-agent/v1', '/disable', array_merge($localhost('disable'), array(
         'methods'  => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_agent_rest_disable',
     )));

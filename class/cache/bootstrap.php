@@ -55,7 +55,6 @@ function faaaster_cache_state()
         'takeover' => $cache ? (bool) $cache->context('takeover') : false,
         'ttl_rules' => 0,
         'purge_rules_customized' => false,
-        'clear_cache_unauthenticated' => FaaasterCacheHostmanager::auth_stats(),
     );
     if ($cache) {
         $defaults = FaaasterCacheSettings::defaults();

@@ -45,7 +45,7 @@ FaaasterCacheTtlEmitter → X-Accel-Expires + X-Faaaster-Cache-TTL
 | `FAAASTER_CACHE_TTL_DISABLED` | aucun `X-Accel-Expires` ni diagnostic |
 | `FAAASTER_CACHE_INTEGRATIONS_DISABLED`, `FAAASTER_CACHE_DISABLE_<ID>` | toutes les intégrations, ou une (`WP_ROCKET`, `WOOCOMMERCE`, `ELEMENTOR`…) |
 | `FAAASTER_WP_ROCKET_POLICY_DISABLED` | bridage WP Rocket (le filtre de cache de pages reste régi par `DISABLE_WPROCKET`) |
-| `FAAASTER_HOSTMANAGER_REQUIRE_AUTH` | Bearer obligatoire sur `clear_cache`. Sans elle, un appel sans Bearer valide est accepté mais journalisé (`[faaaster-cache] hostmanager/clear_cache called without a valid Bearer (missing\|invalid\|no_key)`, option `faaaster_cache_hostmanager_auth`, `site_state` → `other_data.cache.clear_cache_unauthenticated`). À poser par défaut une fois `fstr-worker.php` à jour (P8). |
+| `FAAASTER_HOSTMANAGER_REQUIRE_AUTH` | Bearer obligatoire sur **toutes** les routes locales de la plateforme (`hostmanager/v1`, `faaaster-agent/v1`), via la garde commune `faaaster_hostmanager_guard()` (`class/hostmanager-auth.php`, hors module cache). Sans elle, un appel sans Bearer valide est accepté mais journalisé (`[faaaster-hostmanager] <route> called without a valid Bearer (missing\|invalid\|no_key)`) et compté (option `faaaster_hostmanager_auth`, `site_state` → `other_data.hostmanager_auth`). À poser par défaut quand ce compteur reste à zéro sur le parc. |
 
 ## WP-CLI
 
@@ -76,9 +76,10 @@ Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur.
 
 ## Suivi par la plateforme
 
-- `site_state` → `other_data.cache` : `module` (`active`/`disabled`), `takeover` (fork repris en main), `ttl_rules`, `purge_rules_customized`, `clear_cache_unauthenticated` (`count`, `last_at`, `last_route`, `last_reason`, `last_agent` ; jamais le jeton).
+- `site_state` → `other_data.cache` : `module` (`active`/`disabled`), `takeover` (fork repris en main), `ttl_rules`, `purge_rules_customized`.
+- `site_state` → `other_data.hostmanager_auth` : appels des routes locales sans Bearer valide (`count`, `last_at`, `last_route`, `last_reason`, `last_agent` ; jamais le jeton).
 - `manager_version` → `capabilities.cacheModule` : module actif, donc `clear_cache` répond `502 purge_failed` en cas d'échec.
-- Appelants de `clear_cache` au 04/10/2026 : consumer `hostmanager.ts` et `fstr-wp-op.sh` envoient le Bearer ; `fstr-worker.php` de wp-builder ne l'envoie pas (ni `Host`) : corrigé en P8.
+- Appelants des routes locales au 04/10/2026 : consumer `hostmanager.ts` (hostmanager/v1 et faaaster-agent/v1) et `fstr-wp-op.sh` envoient le Bearer ; `fstr-worker.php` de wp-builder l'envoie depuis 0.12 (`local_route_headers()`, aussi sur `abilities/run` et `rest`). Exceptions publiques à contrôle interne : `public-hostmanager/v1/toggle_mu_plugin` (`manage_options` ou jeton TC validé auprès de Next) et `sso/v1/login`. `flush_object_cache` et `list_agent_users` exigent toujours le Bearer (bloquant).
 
 ## API publique
 

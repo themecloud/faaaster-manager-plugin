@@ -98,6 +98,7 @@ require_once(__DIR__ . '/class/managed-cron-manager.php');
 require_once(__DIR__ . '/class/auth-cookie.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
+require_once(__DIR__ . '/class/hostmanager-auth.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
 require_once(__DIR__ . '/class/wp-rocket-policy.php');
 require_once(__DIR__ . '/class/cache/bootstrap.php');
@@ -370,6 +371,9 @@ function faaaster_at_rest_init()
     global $pluginUpgrader, $themeUpgrader, $coreUpgrader, $staticManager;
 
     // route url: domain.com/wp-json/$namespace/$route
+    // Toutes les routes hostmanager/v1 passent par faaaster_hostmanager_guard()
+    // (class/hostmanager-auth.php) : Bearer WP_API_KEY vérifié, appel sans Bearer
+    // valide journalisé ; bloquant avec FAAASTER_HOSTMANAGER_REQUIRE_AUTH.
     $namespace = 'hostmanager/v1';
 
     $namespacePublic = 'public-hostmanager/v1';
@@ -378,7 +382,7 @@ function faaaster_at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_get_site_state',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('site_state'),
     ));
 
 
@@ -386,100 +390,98 @@ function faaaster_at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_get_check',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('get_check'),
     ));
 
     register_rest_route($namespace, '/db_prefix', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_get_db_prefix',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('db_prefix'),
     ));
 
     register_rest_route($namespace, '/plugin_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$pluginUpgrader, 'plugin_upgrade'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('plugin_upgrade'),
     ));
 
     register_rest_route($namespace, '/plugin_install', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$pluginUpgrader, 'restInstall'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('plugin_install'),
     ));
 
     register_rest_route($namespace, '/plugin_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$pluginUpgrader, 'restToggle'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('plugin_toggle'),
     ));
 
     register_rest_route($namespace, '/theme_upgrade', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$themeUpgrader, 'theme_upgrade'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('theme_upgrade'),
     ));
 
     register_rest_route($namespace, '/theme_install', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$themeUpgrader, 'restInstall'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('theme_install'),
     ));
 
     register_rest_route($namespace, '/theme_toggle', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$themeUpgrader, 'restToggle'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('theme_toggle'),
     ));
 
     register_rest_route($namespace, '/plugin_list', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => [$pluginUpgrader, 'plugin_list'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('plugin_list'),
     ));
 
     register_rest_route($namespace, '/update_core', array(
         'methods' => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_update_core',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('update_core'),
     ));
 
     register_rest_route($namespace, '/reinstall_core', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$coreUpgrader, 'reinstall_core'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('reinstall_core'),
     ));
 
     register_rest_route($namespace, '/reinstall_plugins', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$pluginUpgrader, 'reinstall_plugins'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('reinstall_plugins'),
     ));
 
     register_rest_route($namespace, '/integrity_check', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_integrity_check',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('integrity_check'),
     ));
 
-    // Bearer WP_API_KEY vérifié et appel sans Bearer valide journalisé (compteur
-    // dans site_state) ; bloquant seulement avec FAAASTER_HOSTMANAGER_REQUIRE_AUTH.
     register_rest_route($namespace, '/clear_cache', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => 'faaaster_clear_cache',
         'args' => array(),
-        'permission_callback' => array('FaaasterCacheHostmanager', 'clear_cache_permission'),
+        'permission_callback' => faaaster_hostmanager_guard('clear_cache'),
     ));
 
     // Appelée en boucle locale par le module cache quand il tourne en CLI : vide
@@ -501,23 +503,26 @@ function faaaster_at_rest_init()
         'methods' => WP_REST_Server::CREATABLE,
         'callback' => 'faaaster_handle_email_control',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('toggle_email'),
     ));
 
     register_rest_route($namespace, '/static_enable', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$staticManager, 'enableStatic'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('static_enable'),
     ));
 
     register_rest_route($namespace, '/static_push', array(
         'methods'   => WP_REST_Server::CREATABLE,
         'callback'  => [$staticManager, 'runStaticExport'],
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('static_push'),
     ));
 
+    // Routes publiques à contrôle interne : toggle_mu_plugin exige manage_options
+    // ou un jeton TC validé auprès de Next (verifyTCToken) ; sso/v1/login valide
+    // son jeton (LoginSSO::fetchUserinfo).
     register_rest_route($namespacePublic, '/toggle_mu_plugin', array(
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_toggle_mu_plugin',
@@ -536,7 +541,7 @@ function faaaster_at_rest_init()
         'methods'   => WP_REST_Server::READABLE,
         'callback'  => 'faaaster_get_resources',
         'args' => array(),
-        'permission_callback' => '__return_true',
+        'permission_callback' => faaaster_hostmanager_guard('resources'),
     ));
 }
 
