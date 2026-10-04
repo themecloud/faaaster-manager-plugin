@@ -20,8 +20,61 @@ class FaaasterCloudflare
         $this->api_base = $api_base;
     }
 
+    public function isEnabled()
+    {
+        return $this->app_id && $this->wp_api_key && $this->branch && $this->cfcache_enabled == "true";
+    }
+
     /**
-     * Initialize Cloudflare hooks and filters
+     * Client du module cache : purge totale, UN appel, résultat réel.
+     * @return array ['status' => int, 'ms' => int, 'error' => string|null]
+     */
+    public function purgeEverything()
+    {
+        return $this->post(array('scope' => 'everything'));
+    }
+
+    /**
+     * Client du module cache : URL par lots de 30 (limite de l'API Cloudflare).
+     * @return array ['batches' => int, 'statuses' => int[], 'ok' => bool]
+     */
+    public function purgeUrlList(array $urls)
+    {
+        $statuses = array();
+        $ok = true;
+        foreach (array_chunk(array_values(array_unique($urls)), 30) as $chunk) {
+            $r = $this->post(array('scope' => 'urls', 'urls' => $chunk));
+            $statuses[] = $r['status'];
+            if ($r['status'] !== 200) {
+                $ok = false;
+            }
+        }
+        return array('batches' => count($statuses), 'statuses' => $statuses, 'ok' => $ok);
+    }
+
+    private function post(array $body)
+    {
+        $start = microtime(true);
+        $response = wp_remote_post($this->getEndpointUrl(), array(
+            'body' => json_encode($body),
+            'headers' => $this->getAuthHeaders(),
+            'timeout' => 3,
+        ));
+        $ms = (int) round((microtime(true) - $start) * 1000);
+        if (is_wp_error($response)) {
+            error_log('[faaaster-cache] cloudflare ' . $body['scope'] . ' error: ' . $response->get_error_message());
+            return array('status' => 0, 'ms' => $ms, 'error' => $response->get_error_message());
+        }
+        $status = (int) wp_remote_retrieve_response_code($response);
+        if ($status !== 200) {
+            error_log('[faaaster-cache] cloudflare ' . $body['scope'] . ' failed (' . $status . ')');
+        }
+        return array('status' => $status, 'ms' => $ms, 'error' => null);
+    }
+
+    /**
+     * Câblage historique sur les actions du fork Nginx Helper : utilisé seulement
+     * quand le module cache est inactif (ou que le fork n'a pas été repris en main).
      */
     public function init()
     {

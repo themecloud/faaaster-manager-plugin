@@ -99,6 +99,7 @@ require_once(__DIR__ . '/class/auth-cookie.php');
 require_once(__DIR__ . '/class/static-manager.php');
 require_once(__DIR__ . '/class/event-manager.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
+require_once(__DIR__ . '/class/cache/bootstrap.php');
 
 
 $siteState = new SiteState();
@@ -113,7 +114,20 @@ $eventManager = new FaaasterEventManager($app_id, $branch, $wp_api_key, $faaaste
 $managedCronManager = new FaaasterManagedCronManager();
 $authCookieManager = new FaaasterAuthCookieManager();
 
-$cloudflare->init();
+// Module cache de pages (purge FastCGI + Cloudflare). Kill switch :
+// FAAASTER_CACHE_MODULE_DISABLED. Démarré au chargement du fichier : le fork
+// faaaster-cache-manager, s'il est là, est déjà chargé (ordre alphabétique).
+faaaster_cache_boot(array(
+    'cloudflare' => $cloudflare,
+    'cf_enabled' => $cloudflare->isEnabled(),
+    'hostmanager' => faaaster_is_hostmanager_request(),
+));
+
+// Câblage Cloudflare historique (actions du fork) : seulement si le module ne
+// pilote pas les purges, sinon chaque purge partirait deux fois vers Cloudflare.
+if (!faaaster_cache() || FaaasterCache::fork_present()) {
+    $cloudflare->init();
+}
 $eventManager->init();
 $managedCronManager->init();
 $authCookieManager->init();
@@ -166,6 +180,10 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
  */
 function faaaster_manager_clear_all_cache()
 {
+    if (faaaster_cache()) {
+        return faaaster_cache()->hostmanager()->hard_flush();
+    }
+
     global $cfcache_enabled, $cloudflare;
 
     // 1) Pages (FastCGI) : délègue au cache-manager — SOURCE UNIQUE, forcé (immédiat).
@@ -185,9 +203,10 @@ function faaaster_manager_clear_all_cache()
 
     // 4) Pagespeed + Cloudflare
     touch('/tmp/pagespeed/cache.flush');
-    if (APP_ID && WP_API_KEY && BRANCH && $cfcache_enabled == "true") {
+    if ($cloudflare && defined('APP_ID') && APP_ID && defined('WP_API_KEY') && WP_API_KEY && defined('BRANCH') && BRANCH && $cfcache_enabled == "true") {
         $cloudflare->purgeAll();
     }
+    return null;
 }
 
 function faaaster_toggle_mu_plugin($request)
@@ -286,6 +305,11 @@ function faaaster_update_core($request)
 // Clear Cache
 function faaaster_clear_cache($request)
 {
+    // Module actif : réponse honnête (502 purge_failed si FastCGI n'a pas été vidé).
+    if (faaaster_cache()) {
+        return faaaster_cache()->hostmanager()->rest_clear_cache($request);
+    }
+
     $clear_cache = faaaster_manager_clear_all_cache();
 
     $data = array(
