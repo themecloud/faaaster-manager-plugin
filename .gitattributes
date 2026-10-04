@@ -1,0 +1,11 @@
+# Archive de release (tag GitHub → image wp-builder → mu-plugins servis par nginx) :
+# aucun fichier de développement. Les PHP de test/ et scripts/ seraient exécutables
+# en HTTP direct (test/cache/run.php occupe un worker FPM ~4 s, build-i18n.php
+# réécrit languages/).
+/test export-ignore
+/scripts export-ignore
+/docs export-ignore
+/.github export-ignore
+/.codegraph export-ignore
+/.gitignore export-ignore
+/.gitattributes export-ignore
