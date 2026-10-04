@@ -94,6 +94,7 @@ Page **Réglages › Cache Faaaster** (`manage_options`), rendue côté serveur.
 
 ## Pièges
 
+- **Jamais de reset opcache**, même sur `clear_cache` : les images ont `opcache.validate_timestamps=1` et `revalidate_freq=2`, un fichier modifié est recompilé en ≤ 2 s ; un reset ne rafraîchit rien et recompile tout le code à froid (premier MISS 8,5 s contre 1,2 s, mesuré le 04/10/2026). Code réellement périmé : redémarrage de php-fpm (consumer, scope `php`). `clear_cache` vide en revanche l'object cache (premier MISS +1,2 à 2,3 s), indispensable après une mutation WP-CLI.
 - **Object cache APCu : CLI ≠ FPM.** WP-CLI a son propre segment APCu par processus. Le module vide l'object cache de FPM après une purge totale ou un changement de réglages lancés en CLI ; ailleurs, passer par la route `clear_cache`.
 - **`permission_callback` appelé deux fois** par requête REST : WordPress le rejoue dans `rest_send_allow_header` (en-tête `Allow`) avec le même objet requête. Tout effet de bord (journal, compteur) doit être mémorisé par requête.
 - **Ne jamais simuler un hook global** (`do_action('switch_theme')`) sur un site réel : les extensions y réagissent (Elementor efface tous ses CSS).

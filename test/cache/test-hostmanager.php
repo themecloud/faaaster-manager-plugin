@@ -9,6 +9,7 @@ fc_check('clear_cache ok → code ok', $response->data['code'], 'ok');
 fc_check('clear_cache: exactly one Cloudflare call', $cf->everything, 1);
 fc_check('clear_cache: object cache flushed', $GLOBALS['faaaster_test']['cache_flushed'], 1);
 fc_check('clear_cache: one nginx purge-all', $t->count('all'), 1);
+fc_check('clear_cache: no opcache field (never reset)', array_key_exists('opcache', $response->data['data']), false);
 
 // Purge totale lancée en CLI : l'object cache de FPM est vidé par la route dédiée.
 list($cache, $t, $cf) = faaaster_test_boot(array('cli' => true));

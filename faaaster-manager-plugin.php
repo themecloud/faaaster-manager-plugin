@@ -178,11 +178,9 @@ function faaaster_manager_do_remote_get(string $url, array $args = array())
  * HARD FLUSH — « tout vider » DÉLIBÉRÉ. Appelé UNIQUEMENT par l'endpoint REST manuel
  * (faaaster_clear_cache : bouton « Vider le cache » de l'UI Faaaster / déploiement).
  *
- * C'est le SEUL endroit qui reset l'opcache + vide l'object cache, car ce sont des
- * caches de CODE. Un vidage de PAGES automatique (hooks contenu/RUCSS/WP Rocket) ne doit
- * JAMAIS les toucher : le reset opcache en boucle recompile 23k+ fichiers sous charge →
- * corruption (fatales croisées entre plugins). Comme c'est manuel et rare, le reset est
- * sûr ici (pas de storm). PAS de coalescing : l'utilisateur a cliqué, il veut maintenant.
+ * C'est le SEUL endroit qui vide l'object cache. Jamais l'opcache : validate_timestamps=1
+ * dans les images, un reset ne rafraîchit rien et recompile tout le code à froid (voir
+ * class/cache/hostmanager.php). PAS de coalescing : l'utilisateur a cliqué, il veut maintenant.
  */
 function faaaster_manager_clear_all_cache()
 {
@@ -199,15 +197,10 @@ function faaaster_manager_clear_all_cache()
         faaaster_manager_do_remote_get("http://localhost/purge-all"); // fallback
     }
 
-    // 2) Object cache (APCu/Redis) — caches de CODE/données, vidés délibérément ici.
+    // 2) Object cache (APCu/Redis) — vidé délibérément ici.
     wp_cache_flush();
 
-    // 3) Opcache (bytecode) — délibéré, rare → sûr (pas de storm).
-    if (function_exists('opcache_reset')) {
-        opcache_reset();
-    }
-
-    // 4) Pagespeed + Cloudflare
+    // 3) Pagespeed + Cloudflare
     touch('/tmp/pagespeed/cache.flush');
     if ($cloudflare && defined('APP_ID') && APP_ID && defined('WP_API_KEY') && WP_API_KEY && defined('BRANCH') && BRANCH && $cfcache_enabled == "true") {
         $cloudflare->purgeAll();

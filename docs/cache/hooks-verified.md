@@ -436,3 +436,6 @@ Image wp-php84 (contrat 1.21), nginx avec `ngx_cache_purge` 2.5.
 - **Piège trouvé** : le premier essai comptait 2 par appel. WordPress 7.0.4 rappelle le `permission_callback` dans `rest_send_allow_header` (`wp-includes/rest-api.php`, ~l. 892) avec le même `WP_REST_Request` → décision mémorisée par objet requête (`SplObjectStorage`).
 - `manager_version` → `capabilities.cacheModule: true` ; `takeover: true` (fork 3.2.9 de l'image repris en main).
 - Remis en état : version de l'image restaurée, options `faaaster_cache_settings`, `faaaster_cache_hostmanager_auth`, `faaaster_cache_events` supprimées, 14/14 CSS Elementor en 200.
+
+**Coût des vidages de `clear_cache`** (04/10/2026, www.faaaster.io en `wp-php84:test`, opcache 512 Mo sans `file_cache`, `validate_timestamps=1`, `revalidate_freq=2`) : MISS de l'accueil opcache + APCu chauds 1,1 à 1,3 s ; juste après un vidage APCu seul 2,3 à 3,5 s (requête suivante ≈ 1,1 s) ; juste après `clear_cache` 0.12.0-rc1 (APCu + `opcache_reset`) 8,5 s. Le reset opcache ne rafraîchissait rien (dates validées) : retiré.
+

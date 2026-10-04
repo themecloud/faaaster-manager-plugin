@@ -2,11 +2,15 @@
 
 /**
  * Purge complète déclenchée par la plateforme (route hostmanager/v1/clear_cache :
- * bouton « Vider le cache », changement de domaine, fstr-worker).
+ * bouton « Vider le cache », changement de domaine, fstr-worker, restauration).
  *
- * C'est le SEUL endroit qui vide aussi l'object cache et l'opcache : ce sont des
- * caches de code, qu'un vidage automatique ne doit jamais toucher (un reset
- * opcache en boucle recompile tout le code sous charge).
+ * C'est le SEUL endroit qui vide aussi l'object cache (APCu de PHP-FPM) : les
+ * mutations WP-CLI (toggle, mises à jour, restauration) ne l'invalident pas, leur
+ * segment APCu est séparé. Jamais l'opcache : les images valident les dates des
+ * fichiers (validate_timestamps=1, revalidate_freq=2), un fichier modifié est
+ * recompilé en ≤ 2 s ; un reset ne rafraîchit rien et recompile tout le code à
+ * froid (premier MISS mesuré à 8,5 s contre 1,2 s le 04/10/2026). Code réellement
+ * périmé : redémarrage de php-fpm (consumer, scope php).
  */
 class FaaasterCacheHostmanager
 {
@@ -27,7 +31,7 @@ class FaaasterCacheHostmanager
         $this->queue = $queue;
     }
 
-    /** @return array rapport de purge + object_cache / opcache */
+    /** @return array rapport de purge + object_cache */
     public function hard_flush()
     {
         $report = $this->queue->enqueue_all('hostmanager', true);
@@ -35,7 +39,6 @@ class FaaasterCacheHostmanager
             wp_cache_flush();
         }
         $report['object_cache'] = function_exists('wp_cache_flush');
-        $report['opcache'] = function_exists('opcache_reset') ? (bool) opcache_reset() : false;
         return $report;
     }
 
@@ -143,7 +146,6 @@ class FaaasterCacheHostmanager
             'fastcgi' => $report['nginx'],
             'cloudflare' => $report['cloudflare'],
             'object_cache' => $report['object_cache'],
-            'opcache' => $report['opcache'],
         );
         if (!empty($report['ok'])) {
             return new WP_REST_Response(array('code' => 'ok', 'data' => $data), 200);
