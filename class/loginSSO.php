@@ -266,6 +266,33 @@ class LoginSSO
      * body excerpt — never the token) so the next case is diagnosable; the old
      * code discarded the body. Timeouts keep a wedged upstream from pinning a
      * php-fpm worker: PHP curl defaults to none. */
+    /** Headers of the userinfo call. For a v1 JWT the pod PROVES which site is
+     * asking: `X-Faaaster-App` / `X-Faaaster-Branch` name the instance and
+     * `X-Faaaster-Proof` = HMAC-SHA256(WP_API_KEY, jwt) — the site's own key
+     * signs the token, it is never transmitted. Next compares the token's
+     * audience with the proven site: a token minted for another site is
+     * refused there. Without the proof Next cannot tell which pod is calling
+     * (every pod leaves through the same NAT), so the audience went unchecked.
+     * Legacy opaque tokens go to Symfony, which knows nothing of the proof. */
+    public static function userinfoHeaders($token, $appId = null, $branch = null, $wpApiKey = null)
+    {
+        $headers = array(
+            'Authorization: Bearer ' . $token,
+            'Accept: application/json',
+            'User-Agent: faaaster-manager-plugin/'
+                . (defined('FAAASTER_MANAGER_VERSION') ? FAAASTER_MANAGER_VERSION : '0'),
+        );
+        $appId = $appId ?? (defined('APP_ID') ? APP_ID : '');
+        $branch = $branch ?? (defined('BRANCH') ? BRANCH : '');
+        $wpApiKey = $wpApiKey ?? (defined('WP_API_KEY') ? WP_API_KEY : '');
+        if (substr_count((string) $token, '.') === 2 && $appId !== '' && $branch !== '' && $wpApiKey !== '') {
+            $headers[] = 'X-Faaaster-App: ' . $appId;
+            $headers[] = 'X-Faaaster-Branch: ' . $branch;
+            $headers[] = 'X-Faaaster-Proof: ' . hash_hmac('sha256', (string) $token, (string) $wpApiKey);
+        }
+        return $headers;
+    }
+
     private function fetchUserinfo($token)
     {
         $url = $this->validateUrl($token);
@@ -277,12 +304,7 @@ class LoginSSO
             curl_setopt($conn, CURLOPT_RETURNTRANSFER, true);
             curl_setopt($conn, CURLOPT_CONNECTTIMEOUT, 5);
             curl_setopt($conn, CURLOPT_TIMEOUT, 10);
-            curl_setopt($conn, CURLOPT_HTTPHEADER, array(
-                'Authorization: Bearer ' . $token,
-                'Accept: application/json',
-                'User-Agent: faaaster-manager-plugin/'
-                    . (defined('FAAASTER_MANAGER_VERSION') ? FAAASTER_MANAGER_VERSION : '0'),
-            ));
+            curl_setopt($conn, CURLOPT_HTTPHEADER, self::userinfoHeaders($token));
 
             $result = curl_exec($conn);
             $status = (int) curl_getinfo($conn, CURLINFO_HTTP_CODE);
