@@ -4,6 +4,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+require_once __DIR__ . '/agent-catalog-json.php';
+
 function faaaster_mcp_get_registered_ability_names()
 {
     return array(
@@ -422,6 +424,9 @@ function faaaster_agent_build_catalog()
     }
     $resp = rest_do_request(new WP_REST_Request('GET', '/wp-abilities/v1/abilities'));
     $data = rest_get_server()->response_to_data($resp, false);
+    // Only data reaches the serialized option: a plugin-authored schema or meta
+    // may carry a callable (cf. agent-catalog-json.php).
+    $data = is_array($data) ? faaaster_agent_json_safe($data) : array();
     $catalog = array(
         'data'    => is_array($data) ? $data : array(),
         'builtAt' => time(),
@@ -465,12 +470,20 @@ function faaaster_agent_build_rest_catalog()
                             continue;
                         }
                         // Keep only the agent-relevant schema bits (drop validate/
-                        // sanitize callbacks etc., which aren't JSON anyway).
+                        // sanitize callbacks etc., which aren't JSON anyway). `items`,
+                        // `default` and `enum` are plugin-authored structures: a nested
+                        // callable in there (Elementor Pro Notes `items.sanitize_callback`)
+                        // would make update_option() fatal on serialization.
                         $kept = array();
                         foreach (array('type', 'description', 'required', 'enum', 'default', 'items', 'format') as $k) {
-                            if (array_key_exists($k, $arg_def)) {
-                                $kept[$k] = $arg_def[$k];
+                            if (!array_key_exists($k, $arg_def)) {
+                                continue;
                             }
+                            $safe = faaaster_agent_json_safe_inner($arg_def[$k], 0);
+                            if ($safe === FAAASTER_AGENT_JSON_DROP) {
+                                continue;
+                            }
+                            $kept[$k] = $safe;
                         }
                         $args[$arg_name] = $kept;
                     }
@@ -924,16 +937,46 @@ function faaaster_agent_rest_enable($request)
     update_option(FAAASTER_AGENT_USER_OPTION, $id, false);
     // Populate BOTH discovery catalogues now — enable runs in a plugins-loaded
     // context (faaaster-agent namespace), so client abilities + plugin REST routes
-    // are captured.
-    $catalog = faaaster_agent_build_catalog();
-    $rest    = faaaster_agent_build_rest_catalog();
-    return new WP_REST_Response(array(
-        'ok'        => true,
-        'userId'    => $id,
-        'role'      => $role,
-        'catalog'   => array('count' => count($catalog['data']), 'builtAt' => $catalog['builtAt']),
-        'restRoutes' => array('count' => count($rest['data']), 'builtAt' => $rest['builtAt']),
-    ), 200);
+    // are captured. A builder that throws (a plugin's route index that cannot be
+    // stored) must not turn the grant into a 502: the user is already created, the
+    // answer stays JSON and names what was not rebuilt.
+    $built = faaaster_agent_build_catalogs();
+    return new WP_REST_Response(array_merge(array(
+        'ok'     => true,
+        'userId' => $id,
+        'role'   => $role,
+    ), $built), 200);
+}
+
+/** Rebuild both discovery catalogues, each guarded. Returns the response shape
+ *  shared by enable and the refresh ability: counts, builtAt (null when never
+ *  built) and `warnings` (empty when both succeeded). */
+function faaaster_agent_build_catalogs()
+{
+    $abilities = faaaster_agent_try_build_catalog('abilities', 'faaaster_agent_build_catalog');
+    $rest      = faaaster_agent_try_build_catalog('REST routes', 'faaaster_agent_build_rest_catalog');
+    $warnings  = array();
+    foreach (array($abilities, $rest) as $result) {
+        if ($result['error'] !== null) {
+            $warnings[] = $result['error'];
+        }
+    }
+    return array(
+        'catalog'    => faaaster_agent_catalog_summary($abilities['catalog'], FAAASTER_AGENT_CATALOG_OPTION),
+        'restRoutes' => faaaster_agent_catalog_summary($rest['catalog'], FAAASTER_AGENT_REST_CATALOG_OPTION),
+        'warnings'   => $warnings,
+    );
+}
+
+/** {count, builtAt} of a catalogue just built, else of the one still cached. */
+function faaaster_agent_catalog_summary($built, $option)
+{
+    $catalog = is_array($built) ? $built : get_option($option, array());
+    $data    = (is_array($catalog) && isset($catalog['data']) && is_array($catalog['data'])) ? $catalog['data'] : array();
+    return array(
+        'count'   => count($data),
+        'builtAt' => (is_array($catalog) && isset($catalog['builtAt'])) ? (int) $catalog['builtAt'] : null,
+    );
 }
 
 /** Kill-switch: revoke ability access — remove the options AND the scoped user. */
@@ -1570,12 +1613,12 @@ function faaaster_mcp_ability_moderate_comment($input)
  *  The single explicit refresh lever (agent / UI / throttled session-start). */
 function faaaster_mcp_ability_refresh_abilities($input)
 {
-    $catalog = faaaster_agent_build_catalog();
-    $rest    = faaaster_agent_build_rest_catalog();
+    $built = faaaster_agent_build_catalogs();
     return array(
-        'count'          => count($catalog['data']),
-        'builtAt'        => $catalog['builtAt'],
-        'restRouteCount' => count($rest['data']),
+        'count'          => $built['catalog']['count'],
+        'builtAt'        => $built['catalog']['builtAt'],
+        'restRouteCount' => $built['restRoutes']['count'],
+        'warnings'       => $built['warnings'],
     );
 }
 
