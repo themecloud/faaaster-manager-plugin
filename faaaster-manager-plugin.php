@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.12.2
+ * Version: 0.12.3
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -100,12 +100,17 @@ require_once(__DIR__ . '/class/event-manager.php');
 require_once(__DIR__ . '/class/hostmanager-auth.php');
 require_once(__DIR__ . '/class/mcp-abilities.php');
 require_once(__DIR__ . '/class/wp-rocket-policy.php');
+require_once(__DIR__ . '/class/loopback-tls.php');
 require_once(__DIR__ . '/class/cache/bootstrap.php');
 
 // Politique plateforme WP Rocket (cache de pages coupé, préchargement/RUCSS
 // bridés) : hors de l'interrupteur du module cache, comme l'ancien mu-plugin
 // faaaster-wp-rocket.php qu'elle remplace.
 FaaasterWpRocketPolicy::register();
+
+// Appels HTTPS du site vers lui-même (domaines servis → 127.0.0.1 dans le pod) :
+// wp_remote_*() reconnaît le certificat de boucle locale. cf. class/loopback-tls.php.
+FaaasterLoopbackTls::register();
 
 
 $siteState = new SiteState();
