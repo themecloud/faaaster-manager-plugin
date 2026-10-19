@@ -5,6 +5,10 @@ if (!defined('ABSPATH')) {
 }
 
 require_once __DIR__ . '/settings.php';
+require_once __DIR__ . '/components.php';
+require_once __DIR__ . '/fonts.php';
+require_once __DIR__ . '/owners.php';
+require_once __DIR__ . '/conditionals.php';
 require_once __DIR__ . '/runtime.php';
 require_once __DIR__ . '/rest.php';
 
