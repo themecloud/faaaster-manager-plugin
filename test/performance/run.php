@@ -3178,6 +3178,10 @@ perf_check('inventory site: the static front and posts pages, the shop pages wit
     ),
 ));
 perf_check('inventory conditionals: the discovered tags', $indexed['conditionals'], $discovered);
+$GLOBALS['faaaster_test']['options']['page_for_posts'] = 2003;
+$drafted = $rest->inventory()['site'];
+perf_check('inventory site: a posts page without an address of its own (draft) is no posts page', array($drafted['postsPageId'], $drafted['postsPagePath']), array(0, ''));
+$GLOBALS['faaaster_test']['options']['page_for_posts'] = 24;
 $GLOBALS['faaaster_test']['options']['show_on_front'] = 'posts';
 perf_check('inventory site: 0 without a static front page', $rest->inventory()['site'], array(
     'frontPageId' => 0,

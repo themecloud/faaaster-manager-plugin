@@ -327,6 +327,12 @@ class FaaasterPerformanceRest
         $static = get_option('show_on_front') === 'page';
         $posts_page = $static ? (int) get_option('page_for_posts') : 0;
         $posts_path = $posts_page ? $this->paths_of(array((string) get_permalink($posts_page))) : array();
+        // a posts page left in draft has no address of its own (« /?page_id= »):
+        // the visitor never reaches it, it is not the home page either
+        if (!$posts_path || $posts_path[0] === '/') {
+            $posts_page = 0;
+            $posts_path = array();
+        }
         return array(
             'frontPageId' => $static ? (int) get_option('page_on_front') : 0,
             'postsPageId' => $posts_page,
