@@ -291,11 +291,20 @@ class FaaasterPerformanceRest
         return array(
             'code' => 'ok',
             'supported' => true,
+            // what this inventory carries for the optimizer V2 (Next refuses a
+            // V2 audit without it, never falls back)
+            'capabilities' => self::CAPABILITIES,
             'representatives' => array_slice($representatives, 0, FaaasterPerformanceRuntime::MAX_SESSION_PATHS),
             'templates' => $templates,
             'builders' => array_keys($builders),
             'plugins' => array_slice(array_keys($slugs), 0, 80),
             'theme' => get_stylesheet(),
+            // every published content counted by type, template and builder,
+            // past the bounded scan: the classes Next builds are exhaustive
+            'classCounts' => $this->class_counts(isset($builders['elementor'])),
+            'taxonomyCounts' => $this->taxonomy_counts(),
+            'archives' => $this->archives(),
+            'versions' => $this->versions(),
             'registry' => $this->registry(isset($builders['elementor'])),
             // name => paths, a JSON object even when empty
             'components' => array_map(function ($names) {
@@ -311,13 +320,158 @@ class FaaasterPerformanceRest
         );
     }
 
-    /** The static front page and posts page, 0 without a static front page. */
+    /** The static front page and posts page, 0 without a static front page;
+     *  the posts page's path and the shop pages, each with its role. */
     private function site()
     {
         $static = get_option('show_on_front') === 'page';
+        $posts_page = $static ? (int) get_option('page_for_posts') : 0;
+        $posts_path = $posts_page ? $this->paths_of(array((string) get_permalink($posts_page))) : array();
         return array(
             'frontPageId' => $static ? (int) get_option('page_on_front') : 0,
-            'postsPageId' => $static ? (int) get_option('page_for_posts') : 0,
+            'postsPageId' => $posts_page,
+            'postsPagePath' => $posts_path ? $posts_path[0] : '',
+            'special' => $this->special_pages(),
+        );
+    }
+
+    /** what the inventory carries beyond 0.15 (optimizer V2) */
+    const CAPABILITIES = array('inventory-v2');
+    /** groups of contents counted at most (type × template × builder) */
+    const CLASS_GROUPS_MAX = 500;
+
+    /**
+     * Every published content of a public type counted by type, page template
+     * and builder (`elementor` when Elementor's builder mode is on, `null`
+     * otherwise), with one example each: one grouped query, the template and
+     * the builder read from indexed post meta — never the content.
+     */
+    private function class_counts($elementor)
+    {
+        global $wpdb;
+        $types = $this->public_post_types();
+        if (!is_object($wpdb) || !$types) {
+            return array();
+        }
+        $in_types = implode(',', array_fill(0, count($types), '%s'));
+        $builder = $elementor
+            ? "LEFT JOIN {$wpdb->postmeta} e ON e.post_id = p.ID AND e.meta_key = '_elementor_edit_mode' AND e.meta_value = 'builder'"
+            : '';
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT p.post_type AS type, t.meta_value AS template, " . ($elementor ? 'MAX(e.post_id IS NOT NULL)' : '0') . " AS el,"
+            . " COUNT(DISTINCT p.ID) AS n, MAX(p.ID) AS example FROM {$wpdb->posts} p"
+            . " LEFT JOIN {$wpdb->postmeta} t ON t.post_id = p.ID AND t.meta_key = '_wp_page_template' {$builder}"
+            . " WHERE p.post_status = 'publish' AND p.post_type IN ($in_types)"
+            . ' GROUP BY p.post_type, t.meta_value' . ($elementor ? ', e.post_id IS NOT NULL' : '')
+            . ' LIMIT %d',
+            array_merge($types, array(self::CLASS_GROUPS_MAX))
+        ));
+        $groups = array();
+        foreach (is_array($rows) ? $rows : array() as $row) {
+            $template = (string) $row->template;
+            // as the content index names it: a value a condition cannot name is the default
+            if ($template === '' || !preg_match(FaaasterPerformanceSettings::TEMPLATE_PATTERN, $template)) {
+                $template = 'default';
+            }
+            $key = $row->type . '|' . $template . '|' . ((int) $row->el ? 'elementor' : '');
+            if (!isset($groups[$key])) {
+                $groups[$key] = array(
+                    'type' => (string) $row->type,
+                    'template' => $template,
+                    'builder' => (int) $row->el ? 'elementor' : null,
+                    'count' => 0,
+                    'example' => '',
+                );
+            }
+            $groups[$key]['count'] += (int) $row->n;
+            if ($groups[$key]['example'] === '' && (int) $row->example > 0) {
+                $post = get_post((int) $row->example);
+                $groups[$key]['example'] = $post ? self::content_path($post) : '';
+            }
+        }
+        return array_values($groups);
+    }
+
+    /** Terms with contents per public taxonomy: an archive page each. */
+    private function taxonomy_counts()
+    {
+        $counts = array();
+        foreach ($this->public_taxonomies() as $taxonomy) {
+            $count = wp_count_terms(array('taxonomy' => $taxonomy, 'hide_empty' => true));
+            $counts[$taxonomy] = is_wp_error($count) ? 0 : (int) $count;
+        }
+        return $counts ? $counts : new stdClass();
+    }
+
+    /** Archive pages of the public content types that have one. */
+    private function archives()
+    {
+        $archives = array();
+        foreach ($this->public_post_types() as $post_type) {
+            if (in_array($post_type, array('post', 'page'), true)) {
+                continue;
+            }
+            $object = get_post_type_object($post_type);
+            if (!is_object($object) || empty($object->has_archive)) {
+                continue;
+            }
+            $paths = $this->paths_of(array((string) get_post_type_archive_link($post_type)));
+            if ($paths) {
+                $archives[] = array('postType' => (string) $post_type, 'path' => $paths[0]);
+            }
+        }
+        return $archives;
+    }
+
+    /** WooCommerce shop pages with their role, the home page never one. */
+    private function special_pages()
+    {
+        if (!function_exists('wc_get_page_id')) {
+            return array();
+        }
+        $front = (int) get_option('page_on_front');
+        $pages = array();
+        foreach (array('shop', 'cart', 'checkout', 'myaccount') as $role) {
+            $id = (int) wc_get_page_id($role);
+            if ($id <= 0 || $id === $front) {
+                continue;
+            }
+            $paths = $this->paths_of(array((string) get_permalink($id)));
+            if ($paths && $paths[0] !== '/') {
+                $pages[] = array('role' => $role, 'id' => $id, 'path' => $paths[0]);
+            }
+        }
+        return $pages;
+    }
+
+    /**
+     * The versions a structural change is told from: WordPress, the theme and
+     * its parent, each active extension.
+     */
+    private function versions()
+    {
+        if (!function_exists('get_plugins') && defined('ABSPATH') && is_readable(ABSPATH . 'wp-admin/includes/plugin.php')) {
+            require_once ABSPATH . 'wp-admin/includes/plugin.php';
+        }
+        $installed = function_exists('get_plugins') ? (array) get_plugins() : array();
+        $plugins = array();
+        foreach ((array) get_option('active_plugins', array()) as $file) {
+            $file = (string) $file;
+            $slug = strpos($file, '/') !== false ? dirname($file) : basename($file, '.php');
+            $plugins[$slug] = isset($installed[$file]['Version']) ? (string) $installed[$file]['Version'] : '';
+        }
+        ksort($plugins, SORT_STRING);
+        $theme = function_exists('wp_get_theme') ? wp_get_theme() : null;
+        $parent = is_object($theme) && method_exists($theme, 'parent') ? $theme->parent() : null;
+        return array(
+            'wordpress' => (string) get_bloginfo('version'),
+            'theme' => array(
+                'slug' => get_stylesheet(),
+                'version' => is_object($theme) ? (string) $theme->get('Version') : '',
+                'parent' => is_object($parent) ? (string) $parent->get_stylesheet() : '',
+                'parentVersion' => is_object($parent) ? (string) $parent->get('Version') : '',
+            ),
+            'plugins' => $plugins ? array_slice($plugins, 0, 120, true) : new stdClass(),
         );
     }
 
@@ -479,6 +633,7 @@ class FaaasterPerformanceRest
             if ($posts) {
                 $terms = $this->content_terms(array_keys($posts), $taxonomies);
                 $templates = $this->page_templates(array_keys($posts));
+                $built = $elementor ? $this->elementor_built(array_keys($posts)) : array();
                 foreach ($posts as $id => $post) {
                     // the most telling names first: a content over the bound loses core blocks
                     $names = array_merge(
@@ -489,13 +644,18 @@ class FaaasterPerformanceRest
                         $named[$id]['b'],
                         $named[$id]['core']
                     );
-                    $index['items'][] = array(
+                    $item = array(
                         'id' => $id,
                         'type' => (string) $post->post_type,
                         'slug' => (string) $post->post_name,
                         'path' => $paths[$id],
                         'c' => self::index_names($index['names'], $dictionary, $names),
                     );
+                    // built with Elementor, as classCounts counts it
+                    if (isset($built[$id])) {
+                        $item['el'] = 1;
+                    }
+                    $index['items'][] = $item;
                 }
             }
             $scan['contents'] += count($rows);
@@ -619,6 +779,25 @@ class FaaasterPerformanceRest
         if (count($names[$name]) < self::SCAN_PATHS && $path !== '' && !in_array($path, $names[$name], true)) {
             $names[$name][] = $path;
         }
+    }
+
+    /** Posts of some ids in Elementor's builder mode: id => true, one query. */
+    private function elementor_built(array $ids)
+    {
+        global $wpdb;
+        if (!$ids) {
+            return array();
+        }
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_key = '_elementor_edit_mode' AND meta_value = 'builder' AND post_id IN ("
+            . implode(',', array_fill(0, count($ids), '%d')) . ')',
+            $ids
+        ));
+        $built = array();
+        foreach (is_array($rows) ? $rows : array() as $row) {
+            $built[(int) $row->post_id] = true;
+        }
+        return $built;
     }
 
     /** `_elementor_data` of some posts: id => JSON. */

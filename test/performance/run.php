@@ -839,8 +839,59 @@ function get_term_link($term)
     return 'https://example.com/' . ($term->taxonomy === 'category' ? 'rubrique' : 'categorie') . '/' . $term->slug . '/';
 }
 function get_stylesheet() { return 'astra'; }
+function wp_count_terms($args) { return $args['taxonomy'] === 'category' ? 1 : 2; }
+function get_post_type_object($type)
+{
+    return (object) array('has_archive' => in_array($type, array('product', 'event'), true));
+}
+function get_post_type_archive_link($type)
+{
+    return $type === 'product' ? 'https://example.com/boutique/' : 'https://example.com/evenements/';
+}
+function get_post($id)
+{
+    $id = (int) $id;
+    return (object) array('ID' => $id, 'post_type' => 'page', 'post_name' => 'p' . $id, 'post_parent' => 0, 'filter' => 'raw');
+}
+function get_bloginfo($what) { return $what === 'version' ? '6.8.3' : ''; }
+class Perf_Test_Theme
+{
+    private $slug;
+    private $version;
+    private $parent;
+    public function __construct($slug, $version, $parent = null)
+    {
+        $this->slug = $slug;
+        $this->version = $version;
+        $this->parent = $parent;
+    }
+    public function get($key) { return $key === 'Version' ? $this->version : ''; }
+    public function get_stylesheet() { return $this->slug; }
+    public function parent() { return $this->parent; }
+}
+function wp_get_theme() { return new Perf_Test_Theme('astra', '4.8.1', new Perf_Test_Theme('astra-parent', '4.8.0')); }
+function get_plugins()
+{
+    return array(
+        'woocommerce/woocommerce.php' => array('Version' => '9.3.1'),
+        'complianz-gdpr/complianz-gpdr.php' => array('Version' => '7.1'),
+        'hello.php' => array('Version' => '1.7.2'),
+    );
+}
 $GLOBALS['faaaster_test']['options']['active_plugins'] = array('woocommerce/woocommerce.php', 'complianz-gdpr/complianz-gpdr.php', 'hello.php');
 $inventory = $rest->inventory();
+perf_check('inventory v2: capabilities announced', $inventory['capabilities'], array('inventory-v2'));
+perf_check('inventory v2: terms with contents per public taxonomy', (array) $inventory['taxonomyCounts'], array('product_cat' => 2, 'category' => 1));
+perf_check('inventory v2: archive pages of the types that have one', $inventory['archives'], array(
+    array('postType' => 'product', 'path' => '/boutique/'),
+    array('postType' => 'event', 'path' => '/evenements/'),
+));
+perf_check('inventory v2: versions of WordPress, the theme and each active extension', $inventory['versions'], array(
+    'wordpress' => '6.8.3',
+    'theme' => array('slug' => 'astra', 'version' => '4.8.1', 'parent' => 'astra-parent', 'parentVersion' => '4.8.0'),
+    'plugins' => array('complianz-gdpr' => '7.1', 'hello' => '1.7.2', 'woocommerce' => '9.3.1'),
+));
+perf_check('inventory v2: without a database, no class counted', $inventory['classCounts'], array());
 perf_check('inventory: every public content type is a template, shop pages apart', $inventory['templates'], array(
     array('kind' => 'home', 'context' => 'front_page', 'paths' => array('/')),
     array('kind' => 'article', 'context' => 'post_type:post', 'paths' => array('/blog/a/', '/blog/b/', '/blog/c/')),
@@ -1768,6 +1819,9 @@ class Perf_Test_Wpdb
     public $terms = 'wp_terms';
     public $rows = array();
     public $meta = array();
+    /** id => true: Elementor's builder mode on */
+    public $edit_mode = array();
+    public $class_queries = 0;
     /** id => [[taxonomy, slug]] */
     public $term_rows = array();
     /** id => _wp_page_template */
@@ -1790,6 +1844,35 @@ class Perf_Test_Wpdb
     public function get_results($prepared)
     {
         $args = $prepared['args'];
+        if (strpos($prepared['sql'], 'GROUP BY p.post_type') !== false) {
+            // classCounts: one row per type × raw template × builder
+            $this->class_queries++;
+            array_pop($args);
+            $groups = array();
+            foreach ($this->rows as $id => $row) {
+                if (!in_array($row['post_type'], $args, true)) {
+                    continue;
+                }
+                $template = $this->templates[$id] ?? null;
+                $el = strpos($prepared['sql'], '_elementor_edit_mode') !== false && isset($this->edit_mode[$id]) ? '1' : '0';
+                $key = $row['post_type'] . '|' . (string) $template . '|' . $el;
+                if (!isset($groups[$key])) {
+                    $groups[$key] = (object) array('type' => $row['post_type'], 'template' => $template, 'el' => $el, 'n' => '0', 'example' => '0');
+                }
+                $groups[$key]->n = (string) ((int) $groups[$key]->n + 1);
+                $groups[$key]->example = (string) max((int) $groups[$key]->example, $id);
+            }
+            return array_values($groups);
+        }
+        if (strpos($prepared['sql'], "meta_key = '_elementor_edit_mode'") !== false) {
+            $out = array();
+            foreach ($args as $id) {
+                if (isset($this->edit_mode[$id])) {
+                    $out[] = (object) array('post_id' => (string) $id);
+                }
+            }
+            return $out;
+        }
         if (strpos($prepared['sql'], 'FROM wp_term_relationships') !== false) {
             $this->index_queries++;
             $taxonomies = array_filter($args, 'is_string');
@@ -3072,10 +3155,39 @@ perf_check('contentIndex: the components scan unchanged', array($indexed['compon
     array('acme/slider' => array()),
     array('contents' => 6, 'complete' => true),
 ));
-perf_check('inventory site: the static front and posts pages', $indexed['site'], array('frontPageId' => 23, 'postsPageId' => 24));
+$index_db->edit_mode = array(2004 => true);
+$classed = $rest->inventory();
+perf_check('inventory v2: every content counted by type, template and builder, one example path each', $classed['classCounts'], array(
+    array('type' => 'page', 'template' => 'default', 'builder' => null, 'count' => 3, 'example' => '/filtres/'),
+    array('type' => 'product', 'template' => 'default', 'builder' => null, 'count' => 1, 'example' => '/produit/chaise/'),
+    array('type' => 'post', 'template' => 'default', 'builder' => null, 'count' => 1, 'example' => ''),
+    array('type' => 'page', 'template' => 'templates/full-width.php', 'builder' => 'elementor', 'count' => 1, 'example' => '/pleine-largeur/'),
+));
+perf_check('inventory v2: a content in Elementor\'s builder mode is marked in the index', array_values(array_filter(array_map(function ($item) {
+    return isset($item['el']) ? $item['id'] : null;
+}, $classed['contentIndex']['items']))), array(2004));
+perf_check('inventory v2: one grouped query for the counts', $index_db->class_queries, 2);
+$index_db->edit_mode = array();
+perf_check('inventory site: the static front and posts pages, the shop pages with their role', $indexed['site'], array(
+    'frontPageId' => 23,
+    'postsPageId' => 24,
+    'postsPagePath' => '/a-propos/',
+    'special' => array(
+        array('role' => 'shop', 'id' => 25, 'path' => '/boutique/'),
+        array('role' => 'cart', 'id' => 22, 'path' => '/panier/'),
+    ),
+));
 perf_check('inventory conditionals: the discovered tags', $indexed['conditionals'], $discovered);
 $GLOBALS['faaaster_test']['options']['show_on_front'] = 'posts';
-perf_check('inventory site: 0 without a static front page', $rest->inventory()['site'], array('frontPageId' => 0, 'postsPageId' => 0));
+perf_check('inventory site: 0 without a static front page', $rest->inventory()['site'], array(
+    'frontPageId' => 0,
+    'postsPageId' => 0,
+    'postsPagePath' => '',
+    'special' => array(
+        array('role' => 'shop', 'id' => 25, 'path' => '/boutique/'),
+        array('role' => 'cart', 'id' => 22, 'path' => '/panier/'),
+    ),
+));
 $GLOBALS['wpdb'] = new Perf_Test_Wpdb();
 perf_check('contentIndex: empty, the same shape', json_encode($rest->inventory()['contentIndex']), '{"names":[],"items":[]}');
 $wide_db = new Perf_Test_Wpdb();
