@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.12.3
+ * Version: 0.13.0
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -102,6 +102,7 @@ require_once(__DIR__ . '/class/mcp-abilities.php');
 require_once(__DIR__ . '/class/wp-rocket-policy.php');
 require_once(__DIR__ . '/class/loopback-tls.php');
 require_once(__DIR__ . '/class/cache/bootstrap.php');
+require_once(__DIR__ . '/class/performance/bootstrap.php');
 
 // Politique plateforme WP Rocket (cache de pages coupé, préchargement/RUCSS
 // bridés) : hors de l'interrupteur du module cache, comme l'ancien mu-plugin
