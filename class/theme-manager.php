@@ -6,9 +6,23 @@ require_once ABSPATH . 'wp-admin/includes/misc.php';
 require_once ABSPATH . 'wp-admin/includes/file.php';
 require_once ABSPATH . 'wp-admin/includes/update.php';
 
+// The route answers JSON: nothing of the upgrader's admin page may come before
+// it, or the bridge reads a successful update as a broken response.
 class HostManagerQuietSkinTheme extends \WP_Upgrader_Skin
 {
+    public function header()
+    { /* no output */
+    }
+
+    public function footer()
+    { /* no output */
+    }
+
     public function feedback($string, ...$args)
+    { /* no output */
+    }
+
+    public function decrement_update_count($type)
     { /* no output */
     }
 }
