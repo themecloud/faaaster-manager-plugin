@@ -11,6 +11,7 @@ foreach (array('url', 'transport', 'settings', 'events', 'purge-queue', 'cache')
 require __DIR__ . '/../cache/stubs/fakes.php';
 require __DIR__ . '/../../class/cloudflare-manager.php';
 require __DIR__ . '/../../class/image-optimization/module.php';
+require __DIR__ . '/../../class/image-optimization/backgrounds.php';
 require __DIR__ . '/../../class/image-optimization/purges.php';
 
 $worker = isset($argv[2]) && $argv[2] === 'worker';
@@ -94,6 +95,7 @@ function purge_queue($enabled = true, $all = false) {
 class ImagePurgeGroup implements Countable {
     public function count(): int { return 1; }
     public function get_lcp_element() { return null; }
+    public function get_xpath_elements_map() { return array(); }
     public function get_minimum_viewport_width() { return 0; }
     public function get_maximum_viewport_width() { return null; }
 }
