@@ -8,17 +8,27 @@ class FaaasterImageSources
     const PREFIX = '/_faaaster/images/v1/webp/q80/';
     private $uploads;
     private $root;
+    private $widths;
     private $resolved = array();
 
     public function __construct(array $uploads)
     {
         $this->uploads = $uploads;
         $this->root = !empty($uploads['basedir']) ? realpath($uploads['basedir']) : false;
+        $this->widths = self::WIDTHS;
+        foreach (wp_get_registered_image_subsizes() as $size) {
+            $width = isset($size['width']) ? $size['width'] : 0;
+            if (is_int($width) && $width > 0 && $width <= 2560) {
+                $this->widths[] = $width;
+            }
+        }
+        $this->widths = array_values(array_unique($this->widths));
+        sort($this->widths, SORT_NUMERIC);
     }
 
     public function widths()
     {
-        return self::WIDTHS;
+        return $this->widths;
     }
 
     public function available()
@@ -137,7 +147,7 @@ class FaaasterImageSources
     public function url(array $source, $width = 0)
     {
         $width = (int) $width;
-        if ($width !== 0 && (!in_array($width, self::WIDTHS, true) || $width > $source['width'])) {
+        if ($width !== 0 && (!in_array($width, $this->widths, true) || $width > $source['width'])) {
             return null;
         }
         $url = self::PREFIX . 'w' . $width . '/' . $source['version'] . $source['path'];
@@ -198,7 +208,7 @@ class FaaasterImageSources
                 $largest = $item;
             }
         }
-        foreach (self::WIDTHS as $width) {
+        foreach ($this->widths as $width) {
             if ($width <= $largest['width'] && !isset($out[$width])) {
                 $out[$width] = $this->url($largest, $width) . ' ' . $width . 'w';
             }

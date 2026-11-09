@@ -128,6 +128,10 @@ class FaaasterImageOptimization
             self::suspend('od_rest_api_unavailable');
             return;
         }
+        if (!self::publish_manifest()) {
+            self::suspend('manifest_unwritable_or_invalid');
+            return;
+        }
         self::$status = 'active';
         self::$reason = null;
         add_action('od_register_tag_visitors', array(__CLASS__, 'register_rewriter'), 5);
@@ -158,6 +162,91 @@ class FaaasterImageOptimization
                 return $native($context);
             });
         }
+    }
+
+    public static function manifest_path()
+    {
+        return WP_CONTENT_DIR . '/cache/faaaster-image-optimization/widths.json';
+    }
+
+    public static function publish_manifest()
+    {
+        if (self::is_cli() || !self::$sources) {
+            return false;
+        }
+        $path = self::manifest_path();
+        $directory = dirname($path);
+        if ((!is_dir($directory) && !wp_mkdir_p($directory)) || !is_writable($directory)) {
+            return false;
+        }
+        $lock = @fopen($directory . '/.widths.lock', 'c');
+        if (!$lock) {
+            return false;
+        }
+        try {
+            if (!flock($lock, LOCK_EX)) {
+                return false;
+            }
+            return self::write_manifest($path);
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    private static function write_manifest($path)
+    {
+        if (is_file($path) && !is_readable($path)) {
+            return false;
+        }
+        $widths = self::$sources->widths();
+        $old = is_file($path) ? @file_get_contents($path, false, null, 0, 65537) : null;
+        if ($old !== null && (!is_string($old) || strlen($old) > 65536)) {
+            return false;
+        }
+        if ($old !== null) {
+            $decoded = json_decode($old, true);
+            if (!is_array($decoded) || !isset($decoded['contract'], $decoded['widths'], $decoded['format'], $decoded['quality'])
+                || $decoded['contract'] !== 'faaaster-images-v1' || $decoded['format'] !== 'webp'
+                || $decoded['quality'] !== 80 || !isset($decoded['source_prefix'], $decoded['width_zero'])
+                || $decoded['source_prefix'] !== '/wp-content/uploads/' || $decoded['width_zero'] !== 'no-resize'
+                || !is_array($decoded['widths']) || array_values($decoded['widths']) !== $decoded['widths']) {
+                return false;
+            }
+            foreach ($decoded['widths'] as $width) {
+                if (!is_int($width) || $width < 1 || $width > 2560) {
+                    return false;
+                }
+                $widths[] = $width;
+            }
+        }
+        $widths = array_values(array_unique($widths));
+        sort($widths, SORT_NUMERIC);
+        // Same bound as the Nginx reader. Previously published widths keep cached URLs valid.
+        if (count($widths) > 256) {
+            return false;
+        }
+        $json = wp_json_encode(array(
+            'contract' => 'faaaster-images-v1', 'format' => 'webp', 'quality' => 80,
+            'source_prefix' => '/wp-content/uploads/', 'widths' => $widths, 'width_zero' => 'no-resize',
+        ), JSON_UNESCAPED_SLASHES);
+        if (!is_string($json)) {
+            return false;
+        }
+        if ($old === $json) {
+            return true;
+        }
+        $directory = dirname($path);
+        $temporary = @tempnam($directory, '.widths-');
+        if (!$temporary) {
+            return false;
+        }
+        $ok = @file_put_contents($temporary, $json, LOCK_EX) === strlen($json)
+            && @chmod($temporary, 0644) && @rename($temporary, $path);
+        if (is_file($temporary)) {
+            unlink($temporary);
+        }
+        return $ok;
     }
 
     public static function local_page($url)
@@ -219,7 +308,8 @@ class FaaasterImageOptimization
             'versions' => self::$versions,
             // Internal requests skip plugin loading: expose a dated observation, never invent "active".
             'last_observed' => (self::is_cli() || self::enabled()) ? get_option(self::RUNTIME_OPTION, null) : null,
-            'allowed_widths' => array_merge(array(0), self::WIDTHS), 'url_contract' => 'faaaster-images-v1',
+            'allowed_widths' => self::$sources ? array_merge(array(0), self::$sources->widths()) : null,
+            'manifest_path' => self::manifest_path(), 'url_contract' => 'faaaster-images-v1',
             'od_rest_api_unavailable' => $rest_unavailable === null ? null : 1 === (int) $rest_unavailable,
             'purge_error' => get_option(self::PURGE_ERROR_OPTION, null),
         );

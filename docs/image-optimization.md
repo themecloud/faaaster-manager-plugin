@@ -5,6 +5,9 @@ The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 plugin to install. Upstream files remain unchanged; archive origins and file
 SHA-256 hashes are pinned in `vendor/image-optimization/manifest.json`.
 
+Local correction after release 0.13.0: registered WordPress widths are supported again.
+This correction is not published or activated; its release must be paired with the Nginx widths.json reader.
+
 ## Activation and prerequisites
 
 The module is **off by default**. It requires the exact value
@@ -32,9 +35,13 @@ no format negotiation. The source extension remains in the filename.
 are positive integers of at most 12 digits. A changed source version produces
 a different URL when the HTML is next generated.
 
-Allowed URL widths are **0, 320, 480, 640, 768, 960, 1280, 1600, 1920, 2560**.
+Allowed URL widths are **0, 320, 480, 640, 768, 960, 1280, 1600, 1920, 2560**,
+plus integer widths from `wp_get_registered_image_subsizes()` between 1 and 2560.
 `w0` converts without resizing. Widths are physical pixels, never enlarged.
-There is **no `widths.json`** and no dependency on registered WordPress widths.
+The plugin publishes `wp-content/cache/faaaster-image-optimization/widths.json`
+under a lock with atomic replacement, retaining previously declared widths for cached URLs.
+The manifest is capped at 256 widths and 64 KiB; invalid/unwritable metadata suspends rewriting explicitly.
+Nginx must validate this manifest before forwarding a nonstandard width.
 Existing cropped WordPress files retain their own source through `w0`; a
 `300w` descriptor describes that source's physical width and does not require
 an image-service `w300` URL.
@@ -91,7 +98,7 @@ This is HTML page-cache invalidation; there is no image-variant purge API.
 ## Site state and verification
 
 `other_data.image_optimization` exposes configuration, compatibility, suspension
-reason, dated web observation, allowed widths, the stored
+reason, dated web observation, currently initialized allowed widths (null on isolated requests), manifest path, the stored
 `od_rest_api_unavailable` health result (null until checked), and the latest
 purge error. No new REST health probe runs on each page. REST unavailability
 suspends rewriting while retaining ownership of already scheduled purges.

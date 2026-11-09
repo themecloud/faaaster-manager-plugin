@@ -9,7 +9,7 @@ if (!$core || !is_file($core . '/wp-includes/html-api/class-wp-html-tag-processo
 }
 if (!isset($argv[1])) {
     $failed = 0;
-    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'rest-unavailable', 'cli-disabled', 'cli-enabled', 'purges') as $case) {
+    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'rest-unavailable', 'manifest-invalid', 'cli-disabled', 'cli-enabled', 'purges') as $case) {
         passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . escapeshellarg($case), $code);
         $failed += $code !== 0;
     }
@@ -65,7 +65,13 @@ function wp_parse_url($v, $component = -1) { return parse_url($v, $component); }
 function home_url($path = '') { return 'https://client.test' . $path; }
 function site_url($path = '') { return home_url($path); }
 function wp_upload_dir($time = null, $create = true) { return array('baseurl' => home_url('/wp-content/uploads'), 'basedir' => WP_CONTENT_DIR . '/uploads'); }
-function wp_get_registered_image_subsizes() { throw new RuntimeException('Fixed widths must not depend on registered WP sizes.'); }
+function wp_get_registered_image_subsizes() {
+    return array('thumbnail' => array('width' => 150), 'custom' => array('width' => 777),
+        'large' => array('width' => 1024), 'large2' => array('width' => 1536),
+        'duplicate' => array('width' => 777), 'standard' => array('width' => 640),
+        'too-large' => array('width' => 2561), 'zero' => array('width' => 0),
+        'negative' => array('width' => -1), 'fraction' => array('width' => 666.5));
+}
 function wp_getimagesize($p) { return @getimagesize($p); }
 function wp_mkdir_p($p) { return is_dir($p) || mkdir($p, 0777, true); }
 function wp_json_encode($v, $flags = 0) { return json_encode($v, $flags); }
@@ -168,7 +174,18 @@ foreach (array('optimization_detective_pending_plugin', 'image_prioritizer_pendi
 }
 check('initialization waits for effective versions and late image sizes', has_action('wp_loaded', array('FaaasterImageOptimization', 'initialize')), 10);
 do_action('od_init', OPTIMIZATION_DETECTIVE_VERSION);
+if ($case === 'manifest-invalid') {
+    wp_mkdir_p(dirname(FaaasterImageOptimization::manifest_path()));
+    file_put_contents(FaaasterImageOptimization::manifest_path(), '{bad json');
+}
 do_action('wp_loaded');
+if ($case === 'manifest-invalid') {
+    check('invalid manifest suspends connector', faaaster_image_optimization_state()['reason'], 'manifest_unwritable_or_invalid');
+    check('invalid manifest does not enable rewriting', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
+    check('invalid manifest is not overwritten', file_get_contents(FaaasterImageOptimization::manifest_path()), '{bad json');
+    echo "OK manifest-invalid\n";
+    exit(0);
+}
 if ($case === 'incompatible') {
     check('runtime conflict suspended', faaaster_image_optimization_state()['reason'], 'plugin_versions');
     check('no rewriter on conflict', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
@@ -184,9 +201,32 @@ if ($case === 'rest-unavailable') {
     exit(0);
 }
 check('active', faaaster_image_optimization_state()['status'], 'active');
-check('only fixed widths exposed', faaaster_image_optimization_state()['allowed_widths'], array(0, 320, 480, 640, 768, 960, 1280, 1600, 1920, 2560));
-check('no filesystem work on initialization', is_dir(WP_CONTENT_DIR . '/cache'), false);
-check('no manifest contract', array_key_exists('manifest_path', faaaster_image_optimization_state()), false);
+$allowed_widths = array(0, 150, 320, 480, 640, 768, 777, 960, 1024, 1280, 1536, 1600, 1920, 2560);
+check('registered and standard widths exposed', faaaster_image_optimization_state()['allowed_widths'], $allowed_widths);
+$manifest_path = FaaasterImageOptimization::manifest_path();
+$manifest_body = file_get_contents($manifest_path);
+$manifest_inode = fileinode($manifest_path);
+$manifest = json_decode($manifest_body, true);
+check('manifest contract', $manifest['contract'], 'faaaster-images-v1');
+check('manifest widths match URL validation', $manifest['widths'], array_slice($allowed_widths, 1));
+check('manifest format and quality', array($manifest['format'], $manifest['quality']), array('webp', 80));
+check('manifest source contract', array($manifest['source_prefix'], $manifest['width_zero']), array('/wp-content/uploads/', 'no-resize'));
+check('manifest re-publication succeeds', FaaasterImageOptimization::publish_manifest());
+check('unchanged manifest retained', file_get_contents($manifest_path), $manifest_body);
+clearstatcache(true, $manifest_path);
+check('unchanged manifest not rewritten', fileinode($manifest_path), $manifest_inode);
+$manifest['widths'][] = 750;
+file_put_contents($manifest_path, json_encode($manifest));
+check('previously declared width retained for cached URLs', FaaasterImageOptimization::publish_manifest());
+check('cached 750 width retained', in_array(750, json_decode(file_get_contents($manifest_path), true)['widths'], true));
+$manifest['widths'] = range(1, 256);
+$oversized_manifest = json_encode($manifest);
+file_put_contents($manifest_path, $oversized_manifest);
+check('too many published widths refused', FaaasterImageOptimization::publish_manifest(), false);
+check('oversized manifest not silently changed', file_get_contents($manifest_path), $oversized_manifest);
+file_put_contents($manifest_path, str_repeat('x', 65537));
+check('manifest read bounded to 64 KiB', FaaasterImageOptimization::publish_manifest(), false);
+file_put_contents($manifest_path, $manifest_body);
 check('REST status unknown until upstream checks it', faaaster_image_optimization_state()['od_rest_api_unavailable'], null);
 check('unconditional purge removed', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
 check('PHP floor', FaaasterImageOptimization::eligibility('6.9', '7.3'), 'php_version');
@@ -211,7 +251,9 @@ check('local source dimensions', $source['width'], 1600);
 check('URI contract', (bool) preg_match('~^/_faaaster/images/v1/webp/q80/w960/m[0-9]+-s[0-9]+/wp-content/uploads/2026/11/large\.png$~', $resolver->url($source, 960)));
 check('no upscale', $resolver->url($source, 1920), null);
 check('no arbitrary width', $resolver->url($source, 666), null);
-check('WP custom widths never emitted', $resolver->url($source, 777), null);
+check('registered custom width emitted', strpos($resolver->url($source, 777), '/w777/') !== false);
+check('custom width never upscaled', $resolver->url($resolver->resolve($small), 777), null);
+check('out of contract width refused', $resolver->url($source, 2561), null);
 check('encoded unicode', strpos($resolver->url($resolver->resolve($unicode)), '%C3%A9t%C3%A9%20photo.png') !== false);
 $nested = 'dossier été+1';
 mkdir(WP_CONTENT_DIR . '/uploads/2026/11/' . $nested);
@@ -232,6 +274,10 @@ check('unknown srcset preserved', $resolver->candidates('data:image/png;base64,a
 check('large candidates bounded', strpos($resolver->srcset($resolver->resolve($wide), $resolver->candidates($wide . ' 3000w')), '3000w'), false);
 $mixed = $resolver->srcset($resolver->resolve($small), $resolver->candidates($crop . ' 300w, ' . $large . ' 1600w'));
 check('mixed-ratio crop set not interpolated', strpos($mixed, '/w320/'), false);
+$custom_crop = image_png(777, 333, 'custom-crop.png');
+$custom_set = $resolver->srcset($source, $resolver->candidates($custom_crop . ' 777w, ' . $large . ' 1600w'));
+check('registered cropped candidate retains its own source', strpos($custom_set, 'custom-crop.png 777w') !== false);
+check('registered crop converted without resizing', strpos($custom_set, '/w777/'), false);
 
 $percent = image_png(40, 20, 'literal% photo.png');
 check('literal percent source not signed by px2 stays original', $resolver->resolve($percent), null);
@@ -307,6 +353,9 @@ check('unknown rendered width does not invent sizes', strpos($unknown_output, 's
 check('unknown width preload has no imagesrcset', strpos($unknown_preloads, 'imagesrcset='), false);
 $known = str_replace('<img ', '<img width="400" ', $unknown);
 list($known_output, $known_preloads) = transform_html($known);
+check('registered custom size adds responsive candidate', strpos($known_output, '/w777/') !== false);
+check('registered custom size carried into preload', strpos($known_preloads, '/w777/') !== false);
+check('HTML width attribute retained', strpos($known_output, 'width="400"') !== false);
 check('known HTML width adds responsive candidates', strpos($known_output, '/w320/') !== false);
 check('known HTML width adds bounded sizes', strpos($known_output, 'sizes="(max-width: 400px) 100vw, 400px"') !== false);
 check('preload uses same bounded sizes', strpos($known_preloads, 'imagesizes="(max-width: 400px) 100vw, 400px"') !== false);
