@@ -9,8 +9,9 @@ class FaaasterImagePurges
     const INTERVAL = 600;
     const MAX_ATTEMPTS = 5;
 
-    public static function fingerprint($collection)
+    public static function fingerprint($collection, $url_metrics_id = 0)
     {
+        $dimensions = $url_metrics_id ? get_post_meta($url_metrics_id, FaaasterImageBackgrounds::SOURCES_META, true) : array();
         $groups = array();
         foreach ($collection as $group) {
             $lcp = $group->get_lcp_element();
@@ -26,6 +27,7 @@ class FaaasterImagePurges
         return hash('sha256', wp_json_encode(array(
             'groups' => $groups, 'visible' => $visible, 'positioned' => $positioned,
             'ready' => $collection->get_first_group()->count() > 0 && $collection->get_last_group()->count() > 0,
+            'background_widths' => FaaasterImageBackgrounds::decisions($collection, is_array($dimensions) ? $dimensions : array(), FaaasterImageOptimization::resize_widths()),
         )));
     }
 
@@ -48,7 +50,7 @@ class FaaasterImagePurges
             // Another PHP worker may have written while this request waited for the lock.
             wp_cache_delete($post_id, 'post_meta');
             wp_cache_delete($id, 'post_meta');
-            $fingerprint = self::fingerprint($context->url_metric_group_collection);
+            $fingerprint = self::fingerprint($context->url_metric_group_collection, $id);
             $pending = self::pending($post_id);
             if (get_post_meta($id, self::META, true) !== $fingerprint) {
                 // Persist the work before marking the decision as seen.

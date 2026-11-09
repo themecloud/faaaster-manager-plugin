@@ -1,12 +1,13 @@
-# Image optimization — manager-plugin 0.13.1
+# Image optimization — manager-plugin 0.14.0
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
 plugin to install. Upstream files remain unchanged; archive origins and file
 SHA-256 hashes are pinned in `vendor/image-optimization/manifest.json`.
 
-Release 0.13.1 restores registered WordPress widths alongside the standard widths.
-Before activation, deploy the compatible Nginx reader for the `widths.json` contract below.
+Release 0.14.0 retains the 0.13.1 registered-width manifest and public URL contract.
+It keeps original IMG `src` URLs and adds adaptive inline/data-bg backgrounds.
+Before activation, the compatible Nginx reader for `widths.json` must be deployed.
 
 ## Activation and prerequisites
 
@@ -57,18 +58,30 @@ unsupported formats remain unconverted. JPEG, PNG and static WebP are supported.
 ## HTML rewriting
 
 The connector uses OD's existing HTML traversal before IP creates preload links.
-It rewrites eligible `src` and existing `srcset`, preserving crops and picture
-media conditions. A new `srcset` requires authored usable `sizes` or a positive
-integer HTML `width`. With width W and no usable sizes, it adds
-`sizes="(max-width: Wpx) 100vw, Wpx"`. Unknown rendered width gets only a `w0`
-`src`; file dimensions alone do not establish rendered width.
+IMG `src` remains the original WordPress URL. Eligible variants are carried in
+`srcset` and picture sources, preserving crops and media conditions. A new width
+descriptor set requires authored usable `sizes` or a positive integer HTML
+`width`. With width W and no usable sizes, it adds
+`sizes="(max-width: Wpx) 100vw, Wpx"`. Unknown rendered width gets a single
+`srcset="<w0 URL> 1x"`, without inventing `sizes` or changing intrinsic dimensions.
 
-Existing source sets without known display sizes are converted without adding
-candidates. Picture source sets retain their authored candidates. Unsupported
-picture groups and common JavaScript loaders (`data-src`, `data-srcset`, etc.)
-are left intact as a group. Simple single-URL inline backgrounds use `w0`;
-stylesheet background conversion and video optimization are outside this lot.
+Existing source sets retain their crops; expansion requires known display sizes.
+Full-size candidates use `w0` with the natural width descriptor, including widths
+above 2560. Picture sources keep their authored candidates and receive usable
+sizes for width descriptors when missing. Unsupported picture groups and IMG
+JavaScript loaders (`data-src`, `data-srcset`, etc.) remain intact as a group.
 IP retains ownership of prioritization, native lazy loading and auto-sizes.
+
+Inline `background-image` and `background` support quoted/unquoted URLs, CSS
+escapes and multiple layers. Eligible non-IMG `data-bg` values are also rewritten;
+their existing loader still starts loading. CSS files and video are outside this lot.
+Without measurements, backgrounds use `w0`. Measured sizing uses the conservative
+cover extent `max(element.width, element.height * source.width / source.height)`
+per viewport group, rounded up to an admitted width and capped at the source width.
+CSS resolution queries apply actual DPR within 1..3; densities outside that range
+use its end variants. Identical adjacent viewport decisions share CSS rules.
+Critical-background preloads use the same variants/media conditions. Inline
+backgrounds retain IP's lazy loader, including authored `!important` styles.
 
 ## Measurements, scripts and page-cache purges
 
@@ -80,7 +93,17 @@ about 7.8 KB locally, excluding inline parameters and HTML metadata. Full
 collection completion removes the detector on the next HTML generation; cached
 HTML may keep it until regeneration. No server/browser CPU benchmark is claimed.
 
-Semantic decisions are fingerprinted in OD postmeta. Work stays in the related
+Source dimensions by XPath are stored as one snapshot per existing OD URL post in
+`_faaaster_image_background_sources`. The completed HTML traversal writes only
+when this snapshot changes, clears removed backgrounds, and creates no metadata
+for pages without eligible backgrounds. The first visit may not yet have an OD
+post; dimensions are saved on a later generation after OD creates it. Measurement
+storage reads this snapshot without resolving image files or rewriting dimensions.
+
+Semantic decisions are fingerprinted in OD postmeta. Background CSS and the
+fingerprint share the same cover calculation and admitted-width rounding; raw
+decimal geometry and IMG geometry, including `*[n][self::IMG]` paths, do not enter
+background decisions. Work stays in the related
 WordPress post's `_faaaster_image_pending` metadata until the existing purge
 queue confirms Nginx and any targeted managed Cloudflare purge. The successful
 purge timestamp is written after confirmation. A shared-volume lock per WP
@@ -111,6 +134,7 @@ php test/agent-catalog-json-safe.php
 php test/sso-userinfo-headers.php
 php test/loopback-tls.php
 php test/theme-quiet-skin.php
+WP_TEST_CORE_DIR=/path/to/wordpress-6.9 python3 test/image-optimization/browser.py --chrome /path/to/chrome
 ```
 
 The image suite uses the real WordPress 6.9 parser and unmodified OD/IP. Purge
@@ -118,3 +142,8 @@ tests use the real queue, simulated HTTP and multiple PHP processes against
 shared file-backed metadata; they do not contact production. CI covers PHP
 7.4, 8.2, 8.4 and 8.5. Release validation runs the full PHP lint and suites on
 PHP 7.4.33; deployment and activation require a separate authorized operation.
+The browser suite requires Python >= 3.9 and Chrome/Chromium. It serves local
+fixtures with actual OD preload tags/headers and checks variant selection,
+cover heroes, fractional DPR, original-free image requests, lazy loading, duplicate
+downloads and rejected variant paths. It simulates delivery with PNG fixtures;
+shared-service encoding and the live site recipe are separate checks.

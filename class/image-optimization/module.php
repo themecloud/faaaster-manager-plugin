@@ -8,6 +8,7 @@ class FaaasterImageOptimization
     const RUNTIME_OPTION = 'faaaster_image_optimization_runtime';
     const PURGE_ERROR_OPTION = 'faaaster_image_optimization_purge_error';
     const WIDTHS = array(320, 480, 640, 768, 960, 1280, 1600, 1920, 2560);
+    const REWRITER = 'faaaster/image-urls-v2';
     private static $booted = false;
     private static $status = 'disabled';
     private static $reason = 'disabled';
@@ -113,6 +114,7 @@ class FaaasterImageOptimization
             return;
         }
         require_once __DIR__ . '/sources.php';
+        require_once __DIR__ . '/backgrounds.php';
         require_once __DIR__ . '/visitor.php';
         require_once __DIR__ . '/purges.php';
         self::$sources = new FaaasterImageSources(wp_upload_dir(null, false));
@@ -142,24 +144,42 @@ class FaaasterImageOptimization
     public static function register_rewriter($registry)
     {
         if (self::$status === 'active') {
-            $registry->register('faaaster/image-urls', new FaaasterImageVisitor(self::$sources));
+            $visitor = new FaaasterImageVisitor(self::$sources);
+            $registry->register(self::REWRITER, $visitor);
+            add_action('od_finish_template_optimization', array($visitor, 'finish'));
         }
+    }
+
+    public static function resize_widths()
+    {
+        return self::$sources ? self::$sources->widths() : array();
     }
 
     public static function limit_visitors($registry)
     {
         $registry->unregister('image-prioritizer/video');
-        $rewriter = $registry->get_registered('faaaster/image-urls');
+        $rewriter = $registry->get_registered(self::REWRITER);
         foreach (array('image-prioritizer/img', 'image-prioritizer/background-image') as $id) {
             $native = $registry->get_registered($id);
             if (!$native) {
                 continue;
             }
-            $registry->register($id, function ($context) use ($native, $rewriter) {
+            $registry->register($id, function ($context) use ($native, $rewriter, $id) {
+                if ($id === 'image-prioritizer/background-image' && $rewriter && $rewriter->handles_background($context->processor)) {
+                    return $rewriter->prioritize_background($context, $native);
+                }
                 if ($rewriter && $rewriter->skips($context->processor)) {
                     return false;
                 }
-                return $native($context);
+                // Density candidates do not need the auto sizes that IP adds to lazy images.
+                $density_without_sizes = $context->processor->get_tag() === 'IMG'
+                    && $context->processor->get_attribute('sizes') === null
+                    && preg_match('/\s[0-9.]+x\s*$/', (string) $context->processor->get_attribute('srcset'));
+                $tracked = $native($context);
+                if ($density_without_sizes) {
+                    $context->processor->remove_attribute('sizes');
+                }
+                return $tracked;
             });
         }
     }

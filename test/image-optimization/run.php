@@ -79,7 +79,11 @@ function get_option($k, $default = false) { return isset($GLOBALS['options'][$k]
 function update_option($k, $v, $autoload = null) { $GLOBALS['options'][$k] = $v; return true; }
 function delete_option($k) { unset($GLOBALS['options'][$k]); return true; }
 function get_post_meta($id, $k, $single = false) { return isset($GLOBALS['meta'][$id][$k]) ? $GLOBALS['meta'][$id][$k] : ''; }
-function update_post_meta($id, $k, $v) { $GLOBALS['meta'][$id][$k] = $v; return true; }
+function update_post_meta($id, $k, $v) {
+    $GLOBALS['meta_writes'][$k] = isset($GLOBALS['meta_writes'][$k]) ? $GLOBALS['meta_writes'][$k] + 1 : 1;
+    $GLOBALS['meta'][$id][$k] = $v;
+    return true;
+}
 function wp_cache_delete($id, $group) { return true; }
 function get_current_blog_id() { return 1; }
 function wp_next_scheduled($hook, $args = array()) { return isset($GLOBALS['schedule'][$hook][json_encode($args)]) ? $GLOBALS['schedule'][$hook][json_encode($args)] : false; }
@@ -271,7 +275,7 @@ check('symlink escape rejected', $resolver->resolve('/wp-content/uploads/escape.
 $candidate = $resolver->srcset($resolver->resolve($small), $resolver->candidates($small . ' 400w, ' . $large . ' 1600w'));
 check('small and large candidates', strpos($candidate, '/w320/') !== false && strpos($candidate, '/w1280/') !== false);
 check('unknown srcset preserved', $resolver->candidates('data:image/png;base64,abc 1x'), null);
-check('large candidates bounded', strpos($resolver->srcset($resolver->resolve($wide), $resolver->candidates($wide . ' 3000w')), '3000w'), false);
+check('large full-size w0 candidate retained', strpos($resolver->srcset($resolver->resolve($wide), $resolver->candidates($wide . ' 3000w')), 'wide.png 3000w') !== false);
 $mixed = $resolver->srcset($resolver->resolve($small), $resolver->candidates($crop . ' 300w, ' . $large . ' 1600w'));
 check('mixed-ratio crop set not interpolated', strpos($mixed, '/w320/'), false);
 $custom_crop = image_png(777, 333, 'custom-crop.png');
@@ -297,7 +301,7 @@ check('1025 byte public path rejected', $resolver->url($boundary, 2560), null);
 class ImageTestMetric extends OD_URL_Metric {
     public function __construct(array $data) { $this->data = $data; }
 }
-function collection_for($html, $lcp_id = 'hero', $ratio = 1.0) {
+function collection_for($html, $lcp_id = 'hero', $ratio = 1.0, $widths = array(), $viewports = array(400, 1200), $breakpoints = array(480)) {
     $processor = new OD_HTML_Tag_Processor($html);
     $elements = array();
     while ($processor->next_tag(array('tag_closers' => 'skip'))) {
@@ -309,22 +313,37 @@ function collection_for($html, $lcp_id = 'hero', $ratio = 1.0) {
             'intersectionRatio' => $id === 'below' ? 0.0 : $ratio, 'boundingClientRect' => $rect, 'intersectionRect' => $rect);
     }
     $samples = array();
-    foreach (array(400, 1200) as $width) {
+    foreach ($viewports as $width) {
+        $sample_elements = $elements;
+        if (isset($widths[$width])) {
+            $dimensions = is_array($widths[$width]) ? $widths[$width] : array('width' => $widths[$width]);
+            foreach ($sample_elements as &$element) {
+                foreach (array('boundingClientRect', 'intersectionRect') as $rect_key) {
+                    $element[$rect_key]['width'] = (float) $dimensions['width'];
+                    $element[$rect_key]['right'] = (float) $dimensions['width'];
+                    if (isset($dimensions['height'])) {
+                        $element[$rect_key]['height'] = (float) $dimensions['height'];
+                        $element[$rect_key]['bottom'] = $element[$rect_key]['top'] + (float) $dimensions['height'];
+                    }
+                }
+            }
+            unset($element);
+        }
         $samples[] = new ImageTestMetric(array('uuid' => 'sample-' . $width, 'timestamp' => microtime(true), 'etag' => '0123456789abcdef0123456789abcdef', 'url' => home_url('/page/'),
-            'viewport' => array('width' => $width, 'height' => 800), 'elements' => $elements));
+            'viewport' => array('width' => $width, 'height' => 800), 'elements' => $sample_elements));
     }
-    return new OD_URL_Metric_Group_Collection($samples, '0123456789abcdef0123456789abcdef', array(480), 1, 604800);
+    return new OD_URL_Metric_Group_Collection($samples, '0123456789abcdef0123456789abcdef', $breakpoints, 1, 604800);
 }
-function transform_html($html, $collection = null) {
+function transform_html($html, $collection = null, $url_metrics_id = 10) {
     $processor = new OD_HTML_Tag_Processor($html);
     $groups = $collection ?: collection_for($html);
     $links = new OD_Link_Collection();
     $state = new OD_Visited_Tag_State();
     $registry = new OD_Tag_Visitor_Registry();
     do_action('od_register_tag_visitors', $registry);
-    check('rewriter ordered before native IP', array_keys(iterator_to_array($registry))[0], 'faaaster/image-urls');
+    check('rewriter ordered before native IP', array_keys(iterator_to_array($registry))[0], FaaasterImageOptimization::REWRITER);
     check('video optimization excluded', $registry->is_registered('image-prioritizer/video'), false);
-    $context = new OD_Tag_Visitor_Context($processor, $groups, $links, $state, 10);
+    $context = new OD_Tag_Visitor_Context($processor, $groups, $links, $state, $url_metrics_id);
     while ($processor->next_tag(array('tag_closers' => 'skip'))) {
         $processor->set_bookmark('test-current');
         foreach ($registry as $visitor) {
@@ -334,23 +353,25 @@ function transform_html($html, $collection = null) {
         $processor->release_bookmark('test-current');
         $state->reset();
     }
-    return array($processor->get_updated_html(), $links->get_html());
+    do_action('od_finish_template_optimization', new OD_Template_Optimization_Context($groups, $links, array(), 'test-page', $url_metrics_id));
+    return array($processor->get_updated_html(), $links->get_html(), $links->get_response_header());
 }
 $html = '<html><head></head><body><div><img id="hero" src="' . $large . '" width="1600" height="800" loading="lazy"><img id="below" width="400" src="' . $large . '"></div></body></html>';
 list($output, $preloads) = transform_html($html);
 check('hero made eager by native IP', strpos($output, 'fetchpriority="high"') !== false);
 check('below lazy and auto by native IP', strpos($output, 'sizes="auto, (max-width: 400px) 100vw, 400px"') !== false && strpos($output, 'loading="lazy"') !== false);
 check('preload is transformed', strpos($preloads, FaaasterImageSources::PREFIX) !== false);
-check('preload does not contain original URL', strpos($preloads, $large), false);
+check('original src is retained alongside responsive preloads', strpos($output, 'src="' . $large . '"') !== false);
+check('preload includes responsive candidates', strpos($preloads, 'imagesrcset=') !== false);
 check('generated srcset covers small sizes', strpos($output, '/w320/') !== false);
 list($twice) = transform_html($output);
 check('no double rewriting', substr_count($twice, '/_faaaster/images/'), substr_count($output, '/_faaaster/images/'));
 $unknown = '<html><head></head><body><img id="hero" src="' . $large . '"></body></html>';
 list($unknown_output, $unknown_preloads) = transform_html($unknown);
-check('unknown rendered width only converts src', strpos($unknown_output, '/w0/') !== false);
-check('unknown rendered width does not add srcset', strpos($unknown_output, 'srcset='), false);
+check('unknown rendered width preserves original src', strpos($unknown_output, 'src="' . $large . '"') !== false);
+check('unknown rendered width uses full-size density candidate', strpos($unknown_output, 'large.png 1x"') !== false && strpos($unknown_output, '/w0/') !== false);
 check('unknown rendered width does not invent sizes', strpos($unknown_output, 'sizes='), false);
-check('unknown width preload has no imagesrcset', strpos($unknown_preloads, 'imagesrcset='), false);
+check('unknown width preload uses same density candidate', strpos($unknown_preloads, 'large.png 1x"') !== false && strpos($unknown_preloads, '/w0/') !== false);
 $known = str_replace('<img ', '<img width="400" ', $unknown);
 list($known_output, $known_preloads) = transform_html($known);
 check('registered custom size adds responsive candidate', strpos($known_output, '/w777/') !== false);
@@ -360,13 +381,13 @@ check('known HTML width adds responsive candidates', strpos($known_output, '/w32
 check('known HTML width adds bounded sizes', strpos($known_output, 'sizes="(max-width: 400px) 100vw, 400px"') !== false);
 check('preload uses same bounded sizes', strpos($known_preloads, 'imagesizes="(max-width: 400px) 100vw, 400px"') !== false);
 list($percent_output) = transform_html(str_replace('width="400"', 'width="100%"', $known));
-check('percentage width is not a known pixel width', strpos($percent_output, 'srcset='), false);
+check('percentage width only adds a density candidate', strpos($percent_output, 'large.png 1x"') !== false && strpos($percent_output, '/w320/') === false);
 $authored_sizes = '(max-width: 600px) 90vw, 600px';
 list($sized_output) = transform_html(str_replace('<img ', '<img sizes="' . $authored_sizes . '" ', $unknown));
 check('authored sizes allow candidate generation', strpos($sized_output, '/w320/') !== false);
 check('authored sizes preserved', strpos($sized_output, 'sizes="' . $authored_sizes . '"') !== false);
 list($auto_output) = transform_html(str_replace('<img ', '<img sizes="auto" ', $unknown));
-check('auto alone does not invent an eager srcset', strpos($auto_output, 'srcset='), false);
+check('auto alone only adds a density candidate', strpos($auto_output, 'large.png 1x"') !== false && strpos($auto_output, '/w320/') === false);
 $authored_set = str_replace('<img ', '<img srcset="' . $crop . ' 300w, ' . $large . ' 1600w" ', $unknown);
 list($authored_output) = transform_html($authored_set);
 check('unknown size authored srcset not expanded', strpos($authored_output, '/w320/'), false);
@@ -426,6 +447,13 @@ $GLOBALS['meta'][10][FaaasterImagePurges::LAST] = time() - 601;
 FaaasterImagePurges::flush(42);
 check('pending change eventually purged', count(faaaster_cache()->queue()->urls), 2);
 
+
+require __DIR__ . '/backgrounds.php';
+
+$export = getenv('IMAGE_TEST_EXPORT');
+if ($export) {
+    file_put_contents($export, json_encode(array('root' => WP_CONTENT_DIR, 'widths' => faaaster_image_optimization_state()['allowed_widths'], 'fixtures' => $browser_fixtures)));
+}
 
 $vendor = __DIR__ . '/../../vendor/image-optimization/';
 $manifest = json_decode(file_get_contents($vendor . 'manifest.json'), true);

@@ -182,7 +182,7 @@ class FaaasterImageSources
 
     public function srcset(array $source, array $candidates, $expand = true)
     {
-        if (!$expand || ($candidates && substr($candidates[0]['descriptor'], -1) === 'x')) {
+        if ($candidates && substr($candidates[0]['descriptor'], -1) === 'x') {
             return implode(', ', array_map(function ($candidate) {
                 return $this->url($candidate['source']) . ' ' . $candidate['descriptor'];
             }, $candidates));
@@ -198,12 +198,21 @@ class FaaasterImageSources
                 }, $candidates));
             }
         }
+        if (!$expand) {
+            $existing = array();
+            foreach ($candidates as $candidate) {
+                $existing[$candidate['source']['width']] = $this->url($candidate['source']) . ' ' . $candidate['descriptor'];
+            }
+            if ($existing && $source['width'] > max(array_keys($existing))) {
+                $existing[$source['width']] = $this->url($source) . ' ' . $source['width'] . 'w';
+            }
+            ksort($existing, SORT_NUMERIC);
+            return implode(', ', $existing);
+        }
         foreach ($candidates as $candidate) {
             $item = $candidate['source'];
             // Existing native candidates retain their own crop/source.
-            if ($item['width'] <= 2560) {
-                $out[$item['width']] = $this->url($item) . ' ' . $item['width'] . 'w';
-            }
+            $out[$item['width']] = $this->url($item) . ' ' . $item['width'] . 'w';
             if (abs($item['height'] - $item['width'] * $source['height'] / $source['width']) <= 1 && $item['width'] > $largest['width']) {
                 $largest = $item;
             }
@@ -213,9 +222,11 @@ class FaaasterImageSources
                 $out[$width] = $this->url($largest, $width) . ' ' . $width . 'w';
             }
         }
-        if ($source['width'] <= 2560 && !isset($out[$source['width']])) {
+        if (!isset($out[$source['width']])) {
             $out[$source['width']] = $this->url($source) . ' ' . $source['width'] . 'w';
         }
+        // Full-size conversion remains available even when larger than the largest resize bucket.
+        $out[$largest['width']] = $this->url($largest) . ' ' . $largest['width'] . 'w';
         ksort($out, SORT_NUMERIC);
         return implode(', ', $out);
     }

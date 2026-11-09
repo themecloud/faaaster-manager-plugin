@@ -4,11 +4,13 @@
 class FaaasterImageVisitor
 {
     private $sources;
+    private $backgrounds;
     private $skipped = array();
 
     public function __construct(FaaasterImageSources $sources)
     {
         $this->sources = $sources;
+        $this->backgrounds = new FaaasterImageBackgrounds($sources);
     }
 
     public static function js_loaded($processor)
@@ -26,11 +28,28 @@ class FaaasterImageVisitor
         return self::js_loaded($processor) || isset($this->skipped[$processor->get_xpath()]);
     }
 
+    public function handles_background($processor)
+    {
+        return $this->backgrounds->handles($processor);
+    }
+
+    public function prioritize_background($context, $native)
+    {
+        return $this->backgrounds->prioritize($context, $native);
+    }
+
+    public function finish($context)
+    {
+        remove_action('od_finish_template_optimization', array($this, 'finish'));
+        $this->backgrounds->store_dimensions($context->url_metrics_id);
+    }
+
     public function __invoke($context)
     {
         $processor = $context->processor;
         $tag = $processor->get_tag();
-        if ($tag !== 'PICTURE' && self::js_loaded($processor)) {
+        if ($tag !== 'PICTURE' && self::js_loaded($processor)
+            && ($tag === 'IMG' || $processor->get_attribute('data-bg') === null)) {
             return false;
         }
         if ($tag === 'PICTURE') {
@@ -40,7 +59,7 @@ class FaaasterImageVisitor
                 $this->image($processor);
             }
         } else {
-            $this->background($processor);
+            return $this->backgrounds->rewrite($context);
         }
         // Tracking/prioritization belongs to Image Prioritizer.
         return false;
@@ -57,7 +76,6 @@ class FaaasterImageVisitor
         if ($candidates === null) {
             return;
         }
-        $processor->set_attribute('src', $this->sources->url($source));
         $sizes = $processor->get_attribute('sizes');
         $sizes = is_string($sizes) ? trim($sizes) : '';
         $fallback_sizes = trim((string) preg_replace('/^auto\s*(?:,\s*)?/i', '', $sizes));
@@ -65,12 +83,16 @@ class FaaasterImageVisitor
         $width = is_string($width) && preg_match('/^[1-9][0-9]*$/', $width) ? (int) $width : 0;
         $known_size = $fallback_sizes !== '' || $width > 0;
         if (!$candidates && !$known_size) {
-            // File dimensions are not the rendered width: keep intrinsic sizing with w0.
+            // A density candidate converts without assuming a rendered width or changing src.
+            $processor->set_attribute('srcset', $this->sources->url($source) . ' 1x');
             return;
         }
         if ($fallback_sizes === '' && $width > 0) {
             $processor->set_attribute('sizes', ($sizes !== '' ? 'auto, ' : '')
                 . '(max-width: ' . $width . 'px) 100vw, ' . $width . 'px');
+        } elseif ($fallback_sizes === '' && $candidates && substr($candidates[0]['descriptor'], -1) === 'w') {
+            // Make the browser's existing implicit width-descriptor default explicit.
+            $processor->set_attribute('sizes', $sizes !== '' ? 'auto, 100vw' : '100vw');
         }
         $srcset = $this->sources->srcset($source, $candidates, $known_size);
         if ($srcset !== '') {
@@ -84,6 +106,7 @@ class FaaasterImageVisitor
         $depth = $processor->get_current_depth();
         $sources = array();
         $images = array();
+        $picture_sizes = '100vw';
         $valid = !self::js_loaded($processor);
         $bookmark = 'faaaster-picture-start';
         $processor->set_bookmark($bookmark);
@@ -97,6 +120,14 @@ class FaaasterImageVisitor
             }
             if ($processor->get_tag() === 'IMG') {
                 $images[] = $processor->get_xpath();
+                $sizes = $processor->get_attribute('sizes');
+                $sizes = is_string($sizes) ? trim((string) preg_replace('/^auto\s*(?:,\s*)?/i', '', trim($sizes))) : '';
+                $width = $processor->get_attribute('width');
+                if ($sizes !== '') {
+                    $picture_sizes = $sizes;
+                } elseif (is_string($width) && preg_match('/^[1-9][0-9]*$/', $width)) {
+                    $picture_sizes = '(max-width: ' . (int) $width . 'px) 100vw, ' . (int) $width . 'px';
+                }
                 if (!$this->sources->resolve($processor->get_attribute('src'))
                     || $this->sources->candidates($processor->get_attribute('srcset')) === null) {
                     $valid = false;
@@ -131,28 +162,17 @@ class FaaasterImageVisitor
                 $candidates = $sources[$index++];
                 $processor->set_attribute('srcset', $this->sources->srcset($candidates[0]['source'], $candidates, false));
                 $processor->set_attribute('type', 'image/webp');
+                if (substr($candidates[0]['descriptor'], -1) === 'w') {
+                    $sizes = $processor->get_attribute('sizes');
+                    $sizes = is_string($sizes) ? trim($sizes) : '';
+                    if (trim((string) preg_replace('/^auto\s*(?:,\s*)?/i', '', $sizes)) === '') {
+                        $processor->set_attribute('sizes', ($sizes !== '' ? 'auto, ' : '') . $picture_sizes);
+                    }
+                }
             }
         }
         $processor->seek($bookmark);
         $processor->release_bookmark($bookmark);
     }
 
-    private function background($processor)
-    {
-        $style = $processor->get_attribute('style');
-        if (!is_string($style)) {
-            return;
-        }
-        // Same simple, single-url background supported by IP; no CSS-file rewriting.
-        if (!preg_match('~(?:^|;)\s*background(?:-image)?\s*:([^;]+)~i', $style, $declaration)
-            || preg_match_all('~url\(\s*([\'"]?)(.*?)\1\s*\)~i', $declaration[1], $matches, PREG_SET_ORDER) !== 1) {
-            return;
-        }
-        $source = $this->sources->resolve(trim($matches[0][2]));
-        if (!$source) {
-            return;
-        }
-        $replacement = str_replace($matches[0][0], 'url("' . $this->sources->url($source) . '")', $declaration[0]);
-        $processor->set_attribute('style', str_replace($declaration[0], $replacement, $style));
-    }
 }
