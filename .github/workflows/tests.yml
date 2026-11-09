@@ -25,6 +25,12 @@ jobs:
         run: php test/auth-cookie.php
       - name: Cache module tests
         run: php test/cache/run.php
+      - name: Image optimization tests (real WordPress HTML API)
+        run: |
+          curl --fail --location --silent --show-error https://wordpress.org/wordpress-6.9.zip -o "$RUNNER_TEMP/wordpress-image-test.zip"
+          echo "3e95777a3acb3b05d5cdbd31b16fc1e9b71122ebe3c1f18c6f53dee3eab0d111  $RUNNER_TEMP/wordpress-image-test.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/wordpress-image-test.zip" -d "$RUNNER_TEMP/image-optimization"
+          WP_TEST_CORE_DIR="$RUNNER_TEMP/image-optimization/wordpress" php test/image-optimization/run.php
       - name: Loopback TLS tests
         run: php test/loopback-tls.php
       - name: Theme upgrade skin prints nothing

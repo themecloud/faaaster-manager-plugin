@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.12.4
+ * Version: 0.13.0
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -102,6 +102,7 @@ require_once(__DIR__ . '/class/mcp-abilities.php');
 require_once(__DIR__ . '/class/wp-rocket-policy.php');
 require_once(__DIR__ . '/class/loopback-tls.php');
 require_once(__DIR__ . '/class/cache/bootstrap.php');
+require_once(__DIR__ . '/class/image-optimization/bootstrap.php');
 
 // Politique plateforme WP Rocket (cache de pages coupé, préchargement/RUCSS
 // bridés) : hors de l'interrupteur du module cache, comme l'ancien mu-plugin
@@ -132,6 +133,9 @@ faaaster_cache_boot(array(
     'cf_enabled' => $cloudflare->isEnabled(),
     'hostmanager' => faaaster_is_hostmanager_request(),
 ));
+
+// Off by default. Public OD/IP hooks must never run on isolated hostmanager requests.
+faaaster_image_optimization_boot();
 
 // Câblage Cloudflare historique (actions du fork) : seulement si le module ne
 // pilote pas les purges, sinon chaque purge partirait deux fois vers Cloudflare.

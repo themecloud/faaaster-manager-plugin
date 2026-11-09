@@ -30,6 +30,7 @@ list($cache, $t, $cf) = faaaster_test_boot();
 $report = $cache->queue()->enqueue_all('manual', true);
 fc_check('forced purge-all runs immediately', $t->count('all'), 1);
 fc_check('forced report ok', $report['ok'], true);
+fc_check('forced purge confirmed by both layers', $report['confirmed'], true);
 fc_check('forced report mode', $report['mode'], 'all');
 
 // Escalade au-delà du seuil.
@@ -49,12 +50,14 @@ foreach (array(412, 404) as $absent) {
     $cache->queue()->enqueue_url('https://example.com/x/', 'test');
     $r = $cache->queue()->flush(true);
     fc_check("{$absent} (absent from cache) counts as ok", $r['ok'], true);
+    fc_check("{$absent} cache absence confirms purge", $r['confirmed'], true);
 }
 list($cache, $t, $cf) = faaaster_test_boot();
 $t->path_status = 403;
 $cache->queue()->enqueue_url('https://example.com/x/', 'test');
 $r = $cache->queue()->flush(true);
 fc_check('403 is a failure', $r['ok'], false);
+fc_check('nginx failure is not confirmed', $r['confirmed'], false);
 list($cache, $t, $cf) = faaaster_test_boot();
 $t->all_status = 0;
 $r = $cache->queue()->enqueue_all('manual', true);
@@ -77,8 +80,26 @@ fc_check('foreign host not sent to Cloudflare', count($cf->url_batches), 0);
 
 // Cloudflare désactivé.
 list($cache, $t, $cf) = faaaster_test_boot(array('cf_enabled' => false));
-$cache->queue()->enqueue_all('manual', true);
+$r = $cache->queue()->enqueue_all('manual', true);
 fc_check('Cloudflare disabled: no call', $cf->everything, 0);
+fc_check('Cloudflare disabled: nginx confirmation suffices', $r['confirmed'], true);
+
+// Acquittement durable : nginx seul ne confirme pas une purge CF en échec.
+foreach (array(false, true) as $all) {
+    $broken_cf = new class extends FaaasterTestCloudflare {
+        public function purgeEverything() { return array('status' => 503, 'ms' => 1, 'error' => null); }
+        public function purgeUrlList(array $urls) { return array('batches' => 1, 'statuses' => array(503), 'ok' => false); }
+    };
+    list($cache) = faaaster_test_boot(array('cloudflare' => $broken_cf));
+    if ($all) { $cache->queue()->enqueue_all('test'); }
+    else { $cache->queue()->enqueue_url('https://example.com/a/', 'test'); }
+    $r = $cache->queue()->flush();
+    fc_check('CF failure preserves legacy nginx ok', $r['ok'], true);
+    fc_check('CF failure is not confirmed', $r['confirmed'], false);
+}
+list($cache) = faaaster_test_boot(array('cloudflare' => null, 'cf_enabled' => true));
+$cache->queue()->enqueue_url('https://example.com/a/', 'test');
+fc_check('configured CF without client is not confirmed', $cache->queue()->flush()['confirmed'], false);
 
 // Mise en file après le shutdown : vidage immédiat.
 list($cache, $t, $cf) = faaaster_test_boot();

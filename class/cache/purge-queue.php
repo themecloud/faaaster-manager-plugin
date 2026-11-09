@@ -124,11 +124,12 @@ class FaaasterCachePurgeQueue
     /**
      * Vide la file : nginx, puis pagespeed, puis Cloudflare, puis journal.
      *
-     * @return array ['mode', 'ok', 'nginx' => [...], 'cloudflare' => [...]|null]
+     * `ok` reste le résultat nginx ; `confirmed` exige aussi Cloudflare quand ciblé.
+     * @return array ['mode', 'ok', 'confirmed', 'nginx' => [...], 'cloudflare' => [...]|null]
      */
     public function flush($forced = false)
     {
-        $report = array('mode' => 'none', 'ok' => true, 'nginx' => array(), 'cloudflare' => null, 'object_cache_fpm' => null);
+        $report = array('mode' => 'none', 'ok' => true, 'confirmed' => true, 'nginx' => array(), 'cloudflare' => null, 'object_cache_fpm' => null);
         if (!$this->has_pending()) {
             return $report;
         }
@@ -162,6 +163,15 @@ class FaaasterCachePurgeQueue
                 ? $this->cloudflare->purgeEverything()
                 : ($this->cf_urls ? $this->cloudflare->purgeUrlList(array_values($this->cf_urls)) : null);
         }
+
+        // Un envoi accepté ne suffit pas pour acquitter une purge persistée.
+        // Le client CF peut manquer alors que l'option est active : pas de confirmation.
+        $cf_required = $this->cf_enabled && ($this->all || !empty($this->cf_urls));
+        $cf_result = $report['cloudflare'];
+        $cf_confirmed = is_array($cf_result) && (isset($cf_result['ok'])
+            ? $cf_result['ok'] === true
+            : (isset($cf_result['status']) && $cf_result['status'] === 200 && empty($cf_result['error'])));
+        $report['confirmed'] = $report['ok'] && (!$cf_required || $cf_confirmed);
 
         $this->events->record(array(
             'type' => $report['mode'],

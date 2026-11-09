@@ -181,6 +181,7 @@ class SiteState
                     "is_network"      => ((is_multisite()) ? 1 : 0),
                     "blog_id"         => $blog_id,
                     "cache"           => function_exists('faaaster_cache_state') ? faaaster_cache_state() : null,
+                    "image_optimization" => function_exists('faaaster_image_optimization_state') ? faaaster_image_optimization_state() : null,
                     "hostmanager_auth" => class_exists('FaaasterHostmanagerAuth') ? FaaasterHostmanagerAuth::stats() : null
                 ),
                 "is_network"          => ((is_multisite()) ? 1 : 0),
