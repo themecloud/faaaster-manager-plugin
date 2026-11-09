@@ -1,12 +1,12 @@
-# Image optimization — manager-plugin 0.13.0
+# Image optimization — manager-plugin 0.13.1
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
 plugin to install. Upstream files remain unchanged; archive origins and file
 SHA-256 hashes are pinned in `vendor/image-optimization/manifest.json`.
 
-Local correction after release 0.13.0: registered WordPress widths are supported again.
-This correction is not published or activated; its release must be paired with the Nginx widths.json reader.
+Release 0.13.1 restores registered WordPress widths alongside the standard widths.
+Before activation, deploy the compatible Nginx reader for the `widths.json` contract below.
 
 ## Activation and prerequisites
 
