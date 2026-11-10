@@ -20,6 +20,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @since 0.1.1
  */
 final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
+	/** Local backport capability: the class actually selected by OD's bootstrap. */
+	const FAAASTER_PARSER_FIX_REVISION = 1;
+
+	private bool $ambiguous_structure = false;
+	private array $seen_document_tags = array();
+	private string $verified_body_markup = '';
 
 	/**
 	 * Raw text tags.
@@ -69,6 +75,7 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 		'ASIDE',
 		'BLOCKQUOTE',
 		'DETAILS',
+		'DIALOG',
 		'DIV',
 		'DL',
 		'FIELDSET',
@@ -307,6 +314,9 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 		$this->current_xpath = null; // Clear cache.
 		++$this->cursor_move_count;
 		if ( ! parent::next_token() ) {
+			if ( ! $this->has_bookmark( self::END_OF_BODY_BOOKMARK ) ) {
+				$this->ambiguous_structure = true;
+			}
 			$this->open_stack_tags       = array();
 			$this->open_stack_attributes = array();
 			$this->open_stack_indices    = array();
@@ -332,18 +342,16 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 		}
 
 		if ( ! $this->is_tag_closer() ) {
-
-			// Close an open P tag when a P-closing tag is encountered.
-			// TODO: There are quite a few more cases of optional closing tags: https://html.spec.whatwg.org/multipage/syntax.html#optional-tags
-			// Nevertheless, given WordPress's legacy of XHTML compatibility, the lack of closing tags may not be common enough to warrant worrying about any of them.
-			if ( in_array( $tag_name, self::P_CLOSING_TAGS, true ) ) {
-				$i = array_search( 'P', $this->open_stack_tags, true );
-				if ( false !== $i ) {
-					array_splice( $this->open_stack_tags, (int) $i );
-					array_splice( $this->open_stack_attributes, (int) $i );
-					array_splice( $this->open_stack_indices, count( $this->open_stack_tags ) + 1 );
+			if ( in_array( $tag_name, array( 'HTML', 'HEAD', 'BODY' ), true ) ) {
+				if ( isset( $this->seen_document_tags[ $tag_name ] ) ||
+					( 'HTML' === $tag_name && count( $this->open_stack_tags ) !== 0 ) ||
+					( 'HTML' !== $tag_name && $this->open_stack_tags !== array( 'HTML' ) ) ) {
+					$this->ambiguous_structure = true;
 				}
+				$this->seen_document_tags[ $tag_name ] = true;
 			}
+
+			$this->close_before_start_tag( $tag_name );
 
 			$level                   = count( $this->open_stack_tags );
 			$this->open_stack_tags[] = $tag_name;
@@ -377,32 +385,134 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 				return true;
 			}
 
-			$popped_tag_name = array_pop( $this->open_stack_tags );
-			array_pop( $this->open_stack_attributes );
-			if ( $popped_tag_name !== $tag_name ) {
-				$this->warn(
-					__METHOD__,
-					sprintf(
-						/* translators: 1: Popped tag name, 2: Closing tag name */
-						__( 'Expected popped tag stack element %1$s to match the currently visited closing tag %2$s.', 'optimization-detective' ),
-						$popped_tag_name,
-						$tag_name
-					)
-				);
+			// Ignore unmatched closers; otherwise close through the nearest matching opener.
+			$matching_index = array_search( $tag_name, array_reverse( $this->open_stack_tags, true ), true );
+			if ( false === $matching_index ) {
+				return true;
 			}
+			for ( $i = $matching_index + 1; $i < count( $this->open_stack_tags ); ++$i ) {
+				if ( ! $this->can_close_implicitly( $i ) ) {
+					$this->ambiguous_structure = true;
+				}
+			}
+			$this->close_stack_from( $matching_index );
 
 			// Set bookmarks for insertion of preload links and the detection script module.
-			if ( 'HEAD' === $popped_tag_name ) {
+			if ( 'HEAD' === $tag_name && ! $this->ambiguous_structure ) {
 				$this->set_bookmark( self::END_OF_HEAD_BOOKMARK );
-			} elseif ( 'BODY' === $popped_tag_name ) {
+			} elseif ( 'BODY' === $tag_name && ! $this->ambiguous_structure ) {
 				$this->set_bookmark( self::END_OF_BODY_BOOKMARK );
 			}
 
-			array_splice( $this->open_stack_indices, $this->get_current_depth() + 1 );
 		}
 
 		return true;
 	}
+
+	/** Close optional siblings before their next opener, without crossing their HTML scope. */
+	private function close_before_start_tag( string $tag_name ): void {
+		if ( $this->is_foreign_element() ) {
+			return;
+		}
+		$rules = array();
+		if ( in_array( $tag_name, self::P_CLOSING_TAGS, true ) ) {
+			$rules[] = array( array( 'P' ), array( 'HTML', 'TABLE', 'TD', 'TH', 'BUTTON', 'TEMPLATE' ) );
+		}
+		switch ( $tag_name ) {
+			case 'LI':
+				$rules[] = array( array( 'LI' ), array( 'UL', 'OL', 'MENU' ) );
+				break;
+			case 'DT':
+			case 'DD':
+				$rules[] = array( array( 'DT', 'DD' ), array( 'DL' ) );
+				break;
+			case 'OPTION':
+			case 'OPTGROUP':
+			case 'HR':
+				$rules[] = array( array( 'OPTION' ), array( 'SELECT', 'DATALIST', 'OPTGROUP' ) );
+				if ( 'OPTION' !== $tag_name ) {
+					$rules[] = array( array( 'OPTGROUP' ), array( 'SELECT' ) );
+				}
+				break;
+			case 'TD':
+			case 'TH':
+				$rules[] = array( array( 'TD', 'TH' ), array( 'TR', 'TABLE' ) );
+				break;
+			case 'TR':
+				$rules[] = array( array( 'TR' ), array( 'TABLE' ) );
+				break;
+			case 'TBODY':
+			case 'TFOOT':
+				$rules[] = array( array( 'TR' ), array( 'TABLE' ) );
+				$rules[] = array( array( 'THEAD', 'TBODY' ), array( 'TABLE' ) );
+				break;
+			case 'RT':
+			case 'RP':
+				$rules[] = array( array( 'RT', 'RP' ), array( 'RUBY' ) );
+				break;
+		}
+		if ( in_array( $tag_name, array( 'CAPTION', 'COLGROUP', 'THEAD', 'TBODY', 'TFOOT', 'TR' ), true ) ) {
+			$rules[] = array( array( 'COLGROUP' ), array( 'TABLE' ) );
+		}
+		foreach ( $rules as list( $targets, $boundaries ) ) {
+			for ( $i = count( $this->open_stack_tags ) - 1; $i >= 0; --$i ) {
+				$open = $this->open_stack_tags[ $i ];
+				if ( in_array( $open, $targets, true ) ) {
+					$parent = $this->open_stack_tags[ $i - 1 ] ?? '';
+					$next_sibling_end = ( 'DT' === $open && 'DL' === $parent ) || ( 'THEAD' === $open && 'TABLE' === $parent );
+					if ( ! $next_sibling_end && ! $this->can_close_implicitly( $i ) ) {
+						$this->ambiguous_structure = true;
+					}
+					for ( $j = $i + 1; $j < count( $this->open_stack_tags ); ++$j ) {
+						if ( ! $this->can_close_implicitly( $j ) ) {
+							$this->ambiguous_structure = true;
+						}
+					}
+					$this->close_stack_from( $i );
+					break;
+				}
+				if ( in_array( $open, array_merge( $boundaries, array( 'HTML', 'TEMPLATE', 'SVG', 'MATH' ) ), true ) ) {
+					break;
+				}
+			}
+		}
+	}
+
+	/** Optional end tags are accepted only with an appropriate immediate parent. */
+	private function can_close_implicitly( int $index ): bool {
+		$tag = $this->open_stack_tags[ $index ];
+		if ( in_array( $tag, array( 'A', 'ABBR', 'B', 'BDI', 'BDO', 'CITE', 'CODE', 'DEL', 'DFN', 'EM', 'I', 'INS', 'KBD', 'MARK', 'Q', 'S', 'SAMP', 'SMALL', 'SPAN', 'STRONG', 'SUB', 'SUP', 'TIME', 'U', 'VAR' ), true ) ) {
+			return true;
+		}
+		if ( $this->is_foreign_element() ) {
+			return false;
+		}
+		$parent = $this->open_stack_tags[ $index - 1 ] ?? '';
+		if ( 'P' === $tag ) {
+			return $parent !== '' && strpos( $parent, '-' ) === false &&
+				! in_array( $parent, array( 'A', 'AUDIO', 'DEL', 'INS', 'MAP', 'NOSCRIPT', 'VIDEO' ), true );
+		}
+		$parents = array(
+			'LI' => array( 'UL', 'OL', 'MENU' ),
+			'DD' => array( 'DL' ),
+			'RT' => array( 'RUBY' ), 'RP' => array( 'RUBY' ),
+			'OPTION' => array( 'SELECT', 'DATALIST', 'OPTGROUP' ),
+			'OPTGROUP' => array( 'SELECT' ),
+			'COLGROUP' => array( 'TABLE' ),
+			'TBODY' => array( 'TABLE' ), 'TFOOT' => array( 'TABLE' ),
+			'TR' => array( 'TABLE', 'THEAD', 'TBODY', 'TFOOT' ),
+			'TD' => array( 'TR' ), 'TH' => array( 'TR' ),
+		);
+		return isset( $parents[ $tag ] ) && in_array( $parent, $parents[ $tag ], true );
+	}
+
+	/** Keep the next sibling's index while discarding closed descendants. */
+	private function close_stack_from( int $index ): void {
+		array_splice( $this->open_stack_tags, $index );
+		array_splice( $this->open_stack_attributes, $index );
+		array_splice( $this->open_stack_indices, $index + 1 );
+	}
+
 
 	/**
 	 * Gets the number of times the cursor has moved.
@@ -499,6 +609,11 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 			$this->open_stack_tags       = $this->bookmarked_open_stacks[ $bookmark_name ]['tags'];
 			$this->open_stack_attributes = $this->bookmarked_open_stacks[ $bookmark_name ]['attributes'];
 			$this->open_stack_indices    = $this->bookmarked_open_stacks[ $bookmark_name ]['indices'];
+			$this->previous_tag_without_closer = $this->bookmarked_open_stacks[ $bookmark_name ]['previous_without_closer'];
+			$this->ambiguous_structure = $this->bookmarked_open_stacks[ $bookmark_name ]['ambiguous'];
+			$this->seen_document_tags = $this->bookmarked_open_stacks[ $bookmark_name ]['seen_document_tags'];
+			$this->reached_end_of_document = false;
+			$this->current_xpath = null;
 		}
 		return $result;
 	}
@@ -519,6 +634,9 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 				'tags'       => $this->open_stack_tags,
 				'attributes' => $this->open_stack_attributes,
 				'indices'    => $this->open_stack_indices,
+				'previous_without_closer' => $this->previous_tag_without_closer,
+				'ambiguous' => $this->ambiguous_structure,
+				'seen_document_tags' => $this->seen_document_tags,
 			);
 		}
 		return $result;
@@ -755,6 +873,11 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 			return parent::get_updated_html();
 		}
 
+		$body_markup = implode( '', $this->buffered_text_replacements[ self::END_OF_BODY_BOOKMARK ] ?? array() );
+		if ( $this->ambiguous_structure ) {
+			$this->buffered_text_replacements = array();
+			$this->verified_body_markup = '';
+		}
 		foreach ( array_keys( $this->buffered_text_replacements ) as $bookmark ) {
 			$html_strings = $this->buffered_text_replacements[ $bookmark ];
 			if ( count( $html_strings ) === 0 ) {
@@ -783,7 +906,24 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 			}
 		}
 
-		return parent::get_updated_html();
+		$output = parent::get_updated_html();
+		if ( $body_markup !== '' && ! $this->ambiguous_structure && isset( $this->bookmarks[ self::END_OF_BODY_BOOKMARK ] ) ) {
+			$position = $this->bookmarks[ self::END_OF_BODY_BOOKMARK ]->start;
+			if ( strncasecmp( substr( $output, $position, 6 ), '</body', 6 ) === 0 &&
+				substr( $output, $position - strlen( $body_markup ), strlen( $body_markup ) ) === $body_markup ) {
+				$this->verified_body_markup = $body_markup;
+			}
+		}
+		return $output;
+	}
+
+	public function can_inject_markup(): bool {
+		return ! $this->ambiguous_structure;
+	}
+
+	/** Confirms actual insertion immediately before the real BODY closing token. */
+	public function was_body_html_injected( string $markup ): bool {
+		return $markup !== '' && strpos( $this->verified_body_markup, $markup ) !== false;
 	}
 
 	/**

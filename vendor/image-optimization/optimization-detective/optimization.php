@@ -227,8 +227,11 @@ function od_optimize_template_output_buffer( string $buffer ): string {
 	do_action( 'od_register_tag_visitors', $tag_visitor_registry );
 
 	$current_etag     = od_get_current_url_metrics_etag( $tag_visitor_registry, $wp_the_query, od_get_current_theme_template() );
+	// Filter the rendering view only; stored URL Metrics and REST replacement remain unchanged.
+	$template_url_metrics = $post instanceof WP_Post ? OD_URL_Metrics_Post_Type::get_url_metrics_from_post( $post ) : array();
+	$template_url_metrics = apply_filters( 'od_template_url_metrics', $template_url_metrics, $current_etag );
 	$group_collection = new OD_URL_Metric_Group_Collection(
-		$post instanceof WP_Post ? OD_URL_Metrics_Post_Type::get_url_metrics_from_post( $post ) : array(),
+		$template_url_metrics,
 		$current_etag,
 		od_get_breakpoint_max_widths(),
 		od_get_url_metrics_breakpoint_sample_size(),
@@ -338,8 +341,10 @@ function od_optimize_template_output_buffer( string $buffer ): string {
 
 	// Inject detection script.
 	// TODO: When optimizing above, if we find that there is a stored LCP element but it fails to match, it should perhaps set $needs_detection to true and send the request with an override nonce. However, this would require backtracking and adding the data-od-xpath attributes.
+	$detection_markup = '';
 	if ( $needs_detection ) {
-		$processor->append_body_html( od_get_detection_scripts( $slug, $group_collection ) );
+		$detection_markup = od_get_detection_scripts( $slug, $group_collection );
+		$processor->append_body_html( $detection_markup );
 	}
 
 	/**
@@ -356,7 +361,7 @@ function od_optimize_template_output_buffer( string $buffer ): string {
 
 	// Send any preload links in a Link response header and in a LINK tag injected at the end of the HEAD.
 	// Additional links may have been added at the od_finish_template_optimization action, so this must come after.
-	if ( count( $link_collection ) > 0 ) {
+	if ( count( $link_collection ) > 0 && $processor->can_inject_markup() ) {
 		$response_header_links = $link_collection->get_response_header();
 		if ( ! is_null( $response_header_links ) && ! headers_sent() ) {
 			header( $response_header_links, false );
@@ -364,5 +369,7 @@ function od_optimize_template_output_buffer( string $buffer ): string {
 		$processor->append_head_html( $link_collection->get_html() );
 	}
 
-	return $processor->get_updated_html();
+	$output = $processor->get_updated_html();
+	do_action( 'od_detection_script_injection', $needs_detection, $processor->was_body_html_injected( $detection_markup ) );
+	return $output;
 }

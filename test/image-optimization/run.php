@@ -1,6 +1,6 @@
 <?php
 
-/** Real WP 6.9 HTML API + unmodified OD/IP; no database, site, or HTTP requests. */
+/** Real WP 6.9 HTML API + pinned OD/IP with declared backports; no database/site requests. */
 error_reporting(E_ALL);
 $core = getenv('WP_TEST_CORE_DIR');
 if (!$core || !is_file($core . '/wp-includes/html-api/class-wp-html-tag-processor.php')) {
@@ -9,15 +9,15 @@ if (!$core || !is_file($core . '/wp-includes/html-api/class-wp-html-tag-processo
 }
 if (!isset($argv[1])) {
     $failed = 0;
-    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'rest-unavailable', 'manifest-invalid', 'cli-disabled', 'cli-enabled', 'purges') as $case) {
+    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'unpatched', 'upgrade-v015', 'rest-unavailable', 'manifest-invalid', 'cli-disabled', 'cli-enabled', 'purges', 'counter', 'metrics') as $case) {
         passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . escapeshellarg($case), $code);
         $failed += $code !== 0;
     }
     exit($failed ? 1 : 0);
 }
 $case = $argv[1];
-if ($case === 'purges') {
-    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/purges.php'), $code);
+if (in_array($case, array('purges', 'counter', 'metrics'), true)) {
+    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/' . $case . '.php'), $code);
     exit($code);
 }
 $root = sys_get_temp_dir() . '/faaaster-image-test-' . getmypid();
@@ -57,9 +57,18 @@ function esc_attr($v) { return esc_html($v); }
 function esc_url_raw($v) { return $v; }
 function esc_url($v) { return esc_attr($v); }
 function wp_kses_uri_attributes() { return array('src', 'href', 'poster'); }
-function plugins_url($path, $file) { return home_url('/wp-content/mu-plugins/faaaster-manager-plugin/vendor/image-optimization/image-prioritizer/' . $path); }
+function plugins_url($path, $file) {
+    if (strpos($file, '/vendor/image-optimization/') === false) { return home_url('/wp-content/mu-plugins/faaaster-manager-plugin/' . $path); }
+    $slug = strpos($file, '/optimization-detective/') !== false ? 'optimization-detective' : 'image-prioritizer';
+    return home_url('/wp-content/mu-plugins/faaaster-manager-plugin/vendor/image-optimization/' . $slug . '/' . $path);
+}
 function add_query_arg($key, $value, $url = '') { return is_array($key) ? $value . '?' . http_build_query($key) : $url . '?' . rawurlencode($key) . '=' . rawurlencode($value); }
-function wp_get_inline_script_tag($script, $attributes = array()) { return '<script type="module">' . $script . '</script>'; }
+function wp_get_inline_script_tag($script, $attributes = array()) {
+    $out = '<script';
+    foreach ($attributes as $key => $value) { $out .= ' ' . $key . '="' . esc_attr($value) . '"'; }
+    return $out . '>' . $script . '</script>';
+}
+function wp_trigger_error($function, $message, $level = E_USER_NOTICE) { $GLOBALS['od_warnings'][] = array($function, $message); }
 function _doing_it_wrong($name, $message, $version) { throw new RuntimeException($name . ': ' . $message); }
 function wp_parse_url($v, $component = -1) { return parse_url($v, $component); }
 function home_url($path = '') { return 'https://client.test' . $path; }
@@ -134,6 +143,10 @@ if (in_array($case, array('cli-disabled', 'cli-enabled'), true)) {
 if ($case === 'rest-unavailable') {
     $GLOBALS['options']['od_rest_api_unavailable'] = '1';
 }
+if ($case === 'upgrade-v015') {
+    $GLOBALS['options'][FaaasterImageOptimization::RUNTIME_OPTION] = array('status' => 'active', 'reason' => null,
+        'versions' => array('optimization_detective' => '1.0.0-beta7', 'image_prioritizer' => '1.0.0-beta4'), 'observed_at' => 123);
+}
 if ($case === 'disable-after-active') {
     $GLOBALS['options'][FaaasterImageOptimization::RUNTIME_OPTION] = array('status' => 'active', 'observed_at' => time() - 100);
     faaaster_image_optimization_boot();
@@ -159,7 +172,7 @@ foreach (array('attribute-token', 'span', 'text-replacement', 'token', 'doctype-
     require ABSPATH . 'wp-includes/html-api/class-wp-html-' . $name . '.php';
 }
 faaaster_image_optimization_boot();
-if ($case === 'incompatible') {
+if (in_array($case, array('incompatible', 'unpatched'), true)) {
     // A regular installed plugin replaces the pending embedded copy, even at a LOWER version.
     $from = __DIR__ . '/../../vendor/image-optimization/optimization-detective';
     $to = WP_PLUGIN_DIR . '/optimization-detective';
@@ -168,9 +181,15 @@ if ($case === 'incompatible') {
         $dest = $to . substr($file->getPathname(), strlen($from));
         if ($file->isDir()) { wp_mkdir_p($dest); } else { wp_mkdir_p(dirname($dest)); copy($file->getPathname(), $dest); }
     }
-    file_put_contents($to . '/load.php', str_replace('1.0.0-beta7', '1.0.0-beta6', file_get_contents($to . '/load.php')));
+    if ($case === 'incompatible') {
+        file_put_contents($to . '/load.php', str_replace('1.0.0-beta7', '1.0.0-beta6', file_get_contents($to . '/load.php')));
+    } else {
+        foreach (array('class-od-html-tag-processor.php', 'optimization.php') as $original) {
+            copy(__DIR__ . '/fixtures/od-upstream/' . $original, $to . '/' . $original);
+        }
+    }
     require $to . '/load.php';
-    check('installed older copy actually wins bootstrap', $GLOBALS['optimization_detective_pending_plugin']['version'], '1.0.0-beta6');
+    check('installed copy wins bootstrap', $GLOBALS['optimization_detective_pending_plugin']['version'], $case === 'incompatible' ? '1.0.0-beta6' : '1.0.0-beta7');
 }
 foreach (array('optimization_detective_pending_plugin', 'image_prioritizer_pending_plugin') as $global) {
     $pending = $GLOBALS[$global];
@@ -183,6 +202,43 @@ if ($case === 'manifest-invalid') {
     file_put_contents(FaaasterImageOptimization::manifest_path(), '{bad json');
 }
 do_action('wp_loaded');
+if ($case === 'upgrade-v015') {
+    check('parser revision upgrade does not purge page caches', faaaster_cache()->queue()->all, 0);
+    check('parser revision upgrade retains active mode', faaaster_image_optimization_state()['mode'], 'full');
+    echo "OK upgrade-v015\n";
+    exit(0);
+}
+if ($case === 'unpatched') {
+    check('same-version client copy stays usable', faaaster_image_optimization_state()['status'], 'active');
+    check('missing class marker selects reduced mode', faaaster_image_optimization_state()['mode'], 'srcset_only');
+    check('reduced mode gives explicit reason', faaaster_image_optimization_state()['reason'], 'od_parser_unpatched');
+    check('native client OD hook is preserved', has_action('wp', 'od_maybe_add_template_output_buffer_filter'), 10);
+    check('client reduced features', faaaster_image_optimization_state()['features'], array('lazy', 'srcset'));
+    check('client OD receives no Faaaster CSS collector', has_filter('od_extension_module_urls', array('FaaasterImageOptimization', 'detection_modules')), false);
+    check('client detector endpoint is untouched', has_filter('rest_url', array('FaaasterImageOptimization', 'detect_rest_url')), false);
+    check('client metric schema is untouched', has_filter('od_url_metric_schema_root_additional_properties', array('FaaasterImageOptimization', 'metric_schema')), false);
+    check('client detector ETag is untouched', has_filter('od_current_url_metrics_etag_data', array('FaaasterImageOptimization', 'etag_data')), false);
+    $source_url = image_png(400, 200, 'reduced.png');
+    $registry = new OD_Tag_Visitor_Registry();
+    do_action('od_register_tag_visitors', $registry);
+    check('client native background visitor is preserved', $registry->is_registered('image-prioritizer/background-image'));
+    check('client native video visitor is preserved', $registry->is_registered('image-prioritizer/video'));
+    $p = new OD_HTML_Tag_Processor('<html><head><style>.x{background:url(' . $source_url . ')}</style></head><body><div style="background-image:url(' . $source_url . ')"></div><img width="400" src="' . $source_url . '"></body></html>');
+    $groups = new OD_URL_Metric_Group_Collection(array(), '0123456789abcdef0123456789abcdef', array(480), 1, 604800);
+    $context = new OD_Tag_Visitor_Context($p, $groups, new OD_Link_Collection(), new OD_Visited_Tag_State(), 1);
+    $rewriter = $registry->get_registered(FaaasterImageOptimization::REWRITER);
+    while ($p->next_tag(array('tag_closers' => 'skip'))) { $rewriter($context); }
+    $page = $p->get_updated_html();
+    check('reduced mode still converts srcset', strpos($page, 'srcset="/_faaaster/images/') !== false);
+    check('reduced mode leaves inline backgrounds intact', strpos($page, 'background-image:url(' . $source_url . ')') !== false);
+    check('reduced mode leaves STYLE text intact', strpos($page, '.x{background:url(' . $source_url . ')}') !== false);
+    check('reduced mode adds no background marker', strpos($page, 'data-faaaster-bg'), false);
+    check('reduced mode registers no dimension writer', has_action('od_finish_template_optimization'), false);
+    FaaasterImageOptimization::detection_result(true, false);
+    check('reduced mode does not count client injections', faaaster_image_optimization_state()['detection_injection_failures'], 0);
+    echo "OK unpatched\n";
+    exit(0);
+}
 if ($case === 'manifest-invalid') {
     check('invalid manifest suspends connector', faaaster_image_optimization_state()['reason'], 'manifest_unwritable_or_invalid');
     check('invalid manifest does not enable rewriting', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
@@ -329,14 +385,14 @@ function collection_for($html, $lcp_id = 'hero', $ratio = 1.0, $widths = array()
             }
             unset($element);
         }
-        $samples[] = new ImageTestMetric(array('uuid' => 'sample-' . $width, 'timestamp' => microtime(true), 'etag' => '0123456789abcdef0123456789abcdef', 'url' => home_url('/page/'),
+        $samples[] = new ImageTestMetric(array('uuid' => 'sample-' . $width, 'faaasterParserRevision' => 1, 'timestamp' => microtime(true), 'etag' => '0123456789abcdef0123456789abcdef', 'url' => home_url('/page/'),
             'viewport' => array('width' => $width, 'height' => 800), 'elements' => $sample_elements));
     }
     return new OD_URL_Metric_Group_Collection($samples, '0123456789abcdef0123456789abcdef', $breakpoints, 1, 604800);
 }
 function transform_html($html, $collection = null, $url_metrics_id = 10) {
     $processor = new OD_HTML_Tag_Processor($html);
-    $groups = $collection ?: collection_for($html);
+    $groups = FaaasterImageOptimization::decision_metrics($collection ?: collection_for($html));
     $links = new OD_Link_Collection();
     $state = new OD_Visited_Tag_State();
     $registry = new OD_Tag_Visitor_Registry();
@@ -399,7 +455,8 @@ check('unsigned long path not rewritten in HTML', strpos($long_output, FaaasterI
 
 $js = '<html><head></head><body><img src="' . $small . '" data-src="' . $large . '"></body></html>';
 list($output) = transform_html($js);
-check('JS loader untouched', $output, $js);
+check('JS loader keeps original data-src', strpos($output, 'data-src="' . $large . '"') !== false);
+check('JS loader gets a density twin', strpos($output, 'data-srcset="/_faaaster/images/') !== false && strpos($output, 'large.png 1x"') !== false);
 $picture = '<html><head></head><body><picture><source media="(max-width: 500px)" type="image/png" srcset="' . $crop . ' 300w"><source type="image/png" srcset="' . $large . ' 1600w"><img id="hero" src="' . $large . '"></picture></body></html>';
 list($output) = transform_html($picture);
 check('picture sources changed to webp', substr_count($output, 'type="image/webp"'), 2);
@@ -430,7 +487,7 @@ $b = collection_for($html, 'hero', 0.9);
 $c = collection_for($html, 'below', 0.9);
 check('geometry noise does not purge', FaaasterImagePurges::fingerprint($a), FaaasterImagePurges::fingerprint($b));
 check('changed LCP does purge', FaaasterImagePurges::fingerprint($a) !== FaaasterImagePurges::fingerprint($c));
-$request = new class { public function get_param($name) { return 42; } };
+$request = new class { public function get_param($name) { return $name === 'faaaster_parser_revision' ? 1 : 42; } };
 $context = (object) array('url_metrics_id' => 10, 'url_metric_group_collection' => $a, 'url_metric' => $a->get_flattened_url_metrics()[0], 'request' => $request);
 FaaasterImagePurges::stored($context);
 FaaasterImagePurges::flush(42);
@@ -449,6 +506,9 @@ check('pending change eventually purged', count(faaaster_cache()->queue()->urls)
 
 
 require __DIR__ . '/backgrounds.php';
+require __DIR__ . '/v015.php';
+require __DIR__ . '/css-lcp.php';
+require __DIR__ . '/features.php';
 
 $export = getenv('IMAGE_TEST_EXPORT');
 if ($export) {

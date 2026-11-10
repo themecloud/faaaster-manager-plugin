@@ -1,6 +1,6 @@
 <?php
 
-/** Platform-owned integration; third-party distributions remain unmodified. */
+/** Platform-owned integration; declared OD backports are tracked in the vendor manifest. */
 class FaaasterImageOptimization
 {
     const OD_VERSION = '1.0.0-beta7';
@@ -9,6 +9,11 @@ class FaaasterImageOptimization
     const PURGE_ERROR_OPTION = 'faaaster_image_optimization_purge_error';
     const WIDTHS = array(320, 480, 640, 768, 960, 1280, 1600, 1920, 2560);
     const REWRITER = 'faaaster/image-urls-v2';
+    const DETECTION_FAILURES_OPTION = 'faaaster_image_detection_failures';
+    const PARSER_METRIC_PROPERTY = 'faaasterParserRevision';
+    const CSS_LCP_VERSION = 1;
+    const FEATURES = array('css_lcp', 'inline_bg', 'lazy', 'srcset', 'style_bg');
+    const CSS_LCP_REASONS = array('target_not_found', 'target_not_unique', 'source_not_in_style', 'csp');
     private static $booted = false;
     private static $status = 'disabled';
     private static $reason = 'disabled';
@@ -24,6 +29,63 @@ class FaaasterImageOptimization
     {
         $value = isset($_SERVER['IMAGE_OPTIMIZATION_ENABLED']) ? $_SERVER['IMAGE_OPTIMIZATION_ENABLED'] : getenv('IMAGE_OPTIMIZATION_ENABLED');
         return $value === 'true';
+    }
+
+    /** The image-level switch stays authoritative; this list only cuts individual plugin mechanisms. */
+    public static function parse_disabled_features($value)
+    {
+        $source = 'default'; $disabled = array(); $ignored = array();
+        if ($value !== false) {
+            if (!is_string($value) || strlen($value) > 200) {
+                $source = 'invalid';
+            } else {
+                $value = strtolower(preg_replace('/\s+/', '', $value));
+                if ($value !== '') {
+                    if (preg_match('/[^a-z0-9_,]/', $value)) {
+                        $source = 'invalid';
+                    } else {
+                        $source = 'configured';
+                        foreach (array_unique(explode(',', $value)) as $name) {
+                            if ($name === '') { continue; }
+                            if (in_array($name, self::FEATURES, true)) { $disabled[] = $name; }
+                            else { $ignored[] = $name; }
+                        }
+                    }
+                }
+            }
+        }
+        if (in_array('style_bg', $disabled, true)) { $disabled[] = 'css_lcp'; }
+        $disabled = array_values(array_unique($disabled));
+        sort($disabled); sort($ignored);
+        return array('features' => array_values(array_diff(self::FEATURES, $disabled)), 'features_disabled' => $disabled,
+            'features_ignored' => $ignored, 'features_source' => $source);
+    }
+
+    public static function feature_configuration()
+    {
+        $value = array_key_exists('IMAGE_OPTIMIZATION_DISABLED_FEATURES', $_SERVER)
+            ? ($_SERVER['IMAGE_OPTIMIZATION_DISABLED_FEATURES'] === false ? null : $_SERVER['IMAGE_OPTIMIZATION_DISABLED_FEATURES'])
+            : getenv('IMAGE_OPTIMIZATION_DISABLED_FEATURES');
+        $configuration = self::parse_disabled_features($value);
+        if (!self::enabled() || self::$status === 'suspended') {
+            $configuration['features'] = array();
+        } elseif (self::$status === 'active' && !self::parser_revision()) {
+            // Preserve the existing client-copy mode: only our IMG/picture and lazy srcsets remain.
+            $configuration['features'] = array_values(array_intersect($configuration['features'], array('lazy', 'srcset')));
+        }
+        $configuration['features_disabled'] = array_values(array_diff(self::FEATURES, $configuration['features']));
+        return $configuration;
+    }
+
+    public static function feature_enabled($name)
+    {
+        return !self::is_cli() && self::$status === 'active'
+            && in_array($name, self::feature_configuration()['features'], true);
+    }
+
+    public static function can_optimize_response($can_optimize)
+    {
+        return $can_optimize && (bool) self::feature_configuration()['features'];
     }
 
     public static function eligibility($wp_version, $php_version)
@@ -135,18 +197,117 @@ class FaaasterImageOptimization
             return;
         }
         self::$status = 'active';
-        self::$reason = null;
+        self::$reason = self::parser_revision() ? null : 'od_parser_unpatched';
+        if (self::$reason === null && self::feature_configuration()['features_source'] === 'invalid') { self::$reason = 'features_invalid'; }
         add_action('od_register_tag_visitors', array(__CLASS__, 'register_rewriter'), 5);
         add_action('od_register_tag_visitors', array(__CLASS__, 'limit_visitors'), 20);
+        if (self::parser_revision()) {
+            add_filter('od_current_url_metrics_etag_data', array(__CLASS__, 'etag_data'));
+            add_filter('od_template_url_metrics', array(__CLASS__, 'current_url_metrics'), 10, 2);
+            add_filter('rest_url', array(__CLASS__, 'detect_rest_url'), 10, 2);
+            add_filter('od_url_metric_schema_root_additional_properties', array(__CLASS__, 'metric_schema'));
+            if (self::feature_enabled('css_lcp')) { add_filter('od_extension_module_urls', array(__CLASS__, 'detection_modules')); }
+            else { remove_filter('od_extension_module_urls', array(__CLASS__, 'detection_modules')); }
+            add_filter('od_can_optimize_response', array(__CLASS__, 'can_optimize_response'));
+            add_filter('rest_request_before_callbacks', array(__CLASS__, 'stamp_metric_revision'), 10, 3);
+            add_action('od_detection_script_injection', array(__CLASS__, 'detection_result'), 10, 2);
+        }
         self::observe();
+    }
+
+    public static function parser_revision()
+    {
+        return defined('OD_HTML_Tag_Processor::FAAASTER_PARSER_FIX_REVISION')
+            ? OD_HTML_Tag_Processor::FAAASTER_PARSER_FIX_REVISION : 0;
+    }
+
+    public static function etag_data($data)
+    {
+        $data['faaaster_parser_revision'] = self::parser_revision();
+        $data['faaaster_css_lcp'] = self::CSS_LCP_VERSION;
+        $data['faaaster_features'] = self::feature_configuration()['features'];
+        return $data;
+    }
+
+    public static function current_url_metrics($metrics, $etag)
+    {
+        return array_values(array_filter($metrics, function ($metric) {
+            return $metric->get(self::PARSER_METRIC_PROPERTY) === self::parser_revision();
+        }));
+    }
+
+    public static function detect_rest_url($url, $path)
+    {
+        if (ltrim($path, '/') === 'optimization-detective/v1/url-metrics:store') {
+            return add_query_arg('faaaster_parser_revision', self::parser_revision(), $url);
+        }
+        return $url;
+    }
+
+    public static function detection_modules($urls)
+    {
+        if (!self::feature_enabled('css_lcp')) { return $urls; }
+        $urls[] = add_query_arg('ver', self::CSS_LCP_VERSION, plugins_url('assets/image-css-lcp.js', dirname(__DIR__, 2) . '/faaaster-manager-plugin.php'));
+        return $urls;
+    }
+
+    public static function metric_schema($properties)
+    {
+        $properties[self::PARSER_METRIC_PROPERTY] = array('type' => 'integer', 'minimum' => 1, 'readonly' => true);
+        $properties['faaasterCssLcp'] = array('type' => array('object', 'null'), 'properties' => array(
+            'url' => array('type' => 'string', 'format' => 'uri', 'maxLength' => 500, 'required' => true),
+            'width' => array('type' => 'number', 'minimum' => 0, 'exclusiveMinimum' => true, 'required' => true),
+            'height' => array('type' => 'number', 'minimum' => 0, 'exclusiveMinimum' => true, 'required' => true),
+        ));
+        return $properties;
+    }
+
+    /** Stamp only OD submissions from HTML produced with the effective parser revision. */
+    public static function stamp_metric_revision($response, $handler, $request)
+    {
+        if ($response !== null || $request->get_method() !== 'POST'
+            || $request->get_route() !== '/optimization-detective/v1/url-metrics:store') {
+            return $response;
+        }
+        $data = $request->get_json_params();
+        if (!is_array($data)) { return $response; }
+        $query = $request->get_query_params();
+        $revision = isset($query['faaaster_parser_revision']) ? $query['faaaster_parser_revision'] : null;
+        if ((is_string($revision) || is_int($revision)) && (string) $revision === (string) self::parser_revision()) {
+            $data[self::PARSER_METRIC_PROPERTY] = self::parser_revision();
+        } else {
+            // Do not trust a marker carried in an old HTML page's JSON payload.
+            unset($data[self::PARSER_METRIC_PROPERTY]);
+        }
+        $request->set_body(wp_json_encode($data, JSON_UNESCAPED_SLASHES));
+        return $response;
+    }
+
+    /** A decision-only view; never remove stored samples during parser migration. */
+    public static function decision_metrics($collection)
+    {
+        return new OD_URL_Metric_Group_Collection(
+            self::current_url_metrics($collection->get_flattened_url_metrics(), $collection->get_current_etag()),
+            $collection->get_current_etag(), $collection->get_breakpoints(),
+            $collection->get_sample_size(), $collection->get_freshness_ttl()
+        );
+    }
+
+    public static function detection_result($needed, $injected)
+    {
+        if ($needed && !$injected && self::$status === 'active' && self::parser_revision() && !self::is_cli()) {
+            FaaasterImagePurges::record_detection_failure();
+        }
     }
 
     public static function register_rewriter($registry)
     {
         if (self::$status === 'active') {
-            $visitor = new FaaasterImageVisitor(self::$sources);
+            $visitor = new FaaasterImageVisitor(self::$sources, (bool) self::parser_revision());
             $registry->register(self::REWRITER, $visitor);
-            add_action('od_finish_template_optimization', array($visitor, 'finish'));
+            if (self::parser_revision()) {
+                add_action('od_finish_template_optimization', array($visitor, 'finish'));
+            }
         }
     }
 
@@ -157,6 +318,7 @@ class FaaasterImageOptimization
 
     public static function limit_visitors($registry)
     {
+        if (!self::parser_revision()) { return; } // Preserve the client extension's own behavior.
         $registry->unregister('image-prioritizer/video');
         $rewriter = $registry->get_registered(self::REWRITER);
         foreach (array('image-prioritizer/img', 'image-prioritizer/background-image') as $id) {
@@ -165,6 +327,13 @@ class FaaasterImageOptimization
                 continue;
             }
             $registry->register($id, function ($context) use ($native, $rewriter, $id) {
+                if ($id === 'image-prioritizer/img' && !self::feature_enabled('srcset')) { return false; }
+                if ($id === 'image-prioritizer/background-image') {
+                    if (!self::feature_enabled('inline_bg') && !self::feature_enabled('style_bg')) { return false; }
+                    $style = $context->processor->get_attribute('style');
+                    if (!self::feature_enabled('inline_bg') && is_string($style)
+                        && preg_match('/background(?:-image)?\s*:[^;]*?url\(/', $style)) { return false; }
+                }
                 if ($id === 'image-prioritizer/background-image' && $rewriter && $rewriter->handles_background($context->processor)) {
                     return $rewriter->prioritize_background($context, $native);
                 }
@@ -175,6 +344,7 @@ class FaaasterImageOptimization
                 $density_without_sizes = $context->processor->get_tag() === 'IMG'
                     && $context->processor->get_attribute('sizes') === null
                     && preg_match('/\s[0-9.]+x\s*$/', (string) $context->processor->get_attribute('srcset'));
+                if ($id === 'image-prioritizer/background-image' && $rewriter) { $context = $rewriter->css_native_context($context); }
                 $tracked = $native($context);
                 if ($density_without_sizes) {
                     $context->processor->remove_attribute('sizes');
@@ -305,33 +475,101 @@ class FaaasterImageOptimization
         if (self::is_cli()) {
             return;
         }
-        $state = array('status' => self::$status, 'reason' => self::$reason, 'versions' => self::$versions);
+        $state = array('status' => self::$status, 'reason' => self::$reason, 'versions' => self::$versions,
+            'features' => self::feature_configuration()['features']);
         $previous = get_option(self::RUNTIME_OPTION, array());
         $previous = is_array($previous) ? $previous : array();
         $comparable = $previous;
         unset($comparable['observed_at']);
-        if ($comparable !== $state) {
+        // Older observations predate the cuts and represent the previous all-on behavior.
+        // Migrate metadata without a purge when the effective HTML behavior is unchanged.
+        $missing_features = !array_key_exists('features', $comparable);
+        if ($missing_features && $comparable) {
+            $comparable['features'] = ($comparable['status'] ?? null) === 'active'
+                ? (($comparable['reason'] ?? null) === 'od_parser_unpatched' ? array('lazy', 'srcset') : self::FEATURES) : array();
+        }
+        $changed = $comparable !== $state;
+        if ($changed || $missing_features) {
             $state['observed_at'] = time();
             update_option(self::RUNTIME_OPTION, $state, false);
             // A version installed after activation must invalidate rewritten pages as well.
-            if (faaaster_cache()) {
+            if ($changed && faaaster_cache()) {
                 faaaster_cache()->queue()->enqueue_all('image-optimization:' . self::$status);
             }
         }
     }
 
+    public static function detection_counter_path()
+    {
+        return dirname(self::manifest_path()) . '/.detection-' . get_current_blog_id() . '.json';
+    }
+
+    /** Accept the previous integer option and snapshots without CSS counters during upgrade. */
+    public static function counter_totals($data)
+    {
+        if (is_int($data) || (is_string($data) && ctype_digit($data))) { $data = array('count' => (int) $data); }
+        if (!is_array($data) || !isset($data['count']) || !is_int($data['count']) || $data['count'] < 0) {
+            throw new RuntimeException('Invalid image detection totals.');
+        }
+        $reasons = array_fill_keys(self::CSS_LCP_REASONS, 0);
+        if (array_key_exists('css_lcp_unmatched', $data)) {
+            if (!is_array($data['css_lcp_unmatched'])) { throw new RuntimeException('Invalid image CSS coverage totals.'); }
+            foreach ($data['css_lcp_unmatched'] as $reason => $count) {
+                if (!array_key_exists($reason, $reasons) || !is_int($count) || $count < 0) {
+                    throw new RuntimeException('Invalid image CSS coverage total.');
+                }
+                $reasons[$reason] = $count;
+            }
+        }
+        return array('count' => $data['count'], 'css_lcp_unmatched' => $reasons);
+    }
+
+    /** Atomic snapshots can be read by isolated site-state requests without loading OD/IP. */
+    public static function read_detection_counter()
+    {
+        $path = self::detection_counter_path();
+        if (!file_exists($path)) { return null; }
+        $raw = @file_get_contents($path, false, null, 0, 2049);
+        $data = is_string($raw) && strlen($raw) <= 2048 ? json_decode($raw, true) : null;
+        if (!is_array($data) || !isset($data['count'], $data['next_flush'])
+            || !is_int($data['count']) || $data['count'] < 0
+            || !is_int($data['next_flush']) || $data['next_flush'] < 0) {
+            throw new RuntimeException('Invalid or unreadable image detection counter.');
+        }
+        return self::counter_totals($data) + array('next_flush' => $data['next_flush']);
+    }
+
     public static function state()
     {
         $rest_unavailable = get_option('od_rest_api_unavailable', null);
-        return array(
+        $counter_error = null;
+        try {
+            $counter = self::read_detection_counter();
+            $totals = $counter !== null ? $counter : self::counter_totals(get_option(self::DETECTION_FAILURES_OPTION, 0));
+            $failures = $totals['count'];
+            $unmatched = $totals['css_lcp_unmatched'];
+        } catch (\Throwable $e) {
+            $failures = null;
+            $unmatched = null;
+            $counter_error = 'detection_counter_unavailable';
+        }
+        $features = self::feature_configuration();
+        if (self::is_cli()) { $features = array('features' => null, 'features_disabled' => null, 'features_ignored' => array(), 'features_source' => null); }
+        return array_merge($features, array(
+            'features_error' => $features['features_source'] === 'invalid' ? 'features_invalid' : null,
             'configured' => self::is_cli() ? null : self::enabled(), 'status' => self::$status, 'reason' => self::$reason,
             'versions' => self::$versions,
+            'parser_fix_revision' => self::parser_revision(),
+            'mode' => self::$status === 'active' ? (self::parser_revision() ? 'full' : 'srcset_only') : null,
+            'detection_injection_failures' => $failures,
+            'css_lcp_unmatched' => $unmatched,
+            'detection_counter_error' => $counter_error,
             // Internal requests skip plugin loading: expose a dated observation, never invent "active".
             'last_observed' => (self::is_cli() || self::enabled()) ? get_option(self::RUNTIME_OPTION, null) : null,
             'allowed_widths' => self::$sources ? array_merge(array(0), self::$sources->widths()) : null,
             'manifest_path' => self::manifest_path(), 'url_contract' => 'faaaster-images-v1',
             'od_rest_api_unavailable' => $rest_unavailable === null ? null : 1 === (int) $rest_unavailable,
             'purge_error' => get_option(self::PURGE_ERROR_OPTION, null),
-        );
+        ));
     }
 }

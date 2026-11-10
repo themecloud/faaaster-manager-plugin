@@ -1,5 +1,6 @@
 """Exercise real PHP-rewritten HTML in a fresh headless Chrome profile, against local image fixtures."""
 import argparse
+import gzip
 import http.server
 import json
 import os
@@ -107,6 +108,7 @@ def main():
         uploads = Path(data['root']) / 'uploads'
         requests = []
         failures = []
+        metrics = []
         request_lock = threading.Lock()
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -121,6 +123,17 @@ def main():
                         failures.append((code, self.path))
                 super().send_error(code, message, explain)
 
+            def do_POST(self):
+                # Capture the real detector's payload; this is not a WordPress REST validation test.
+                body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                if self.headers.get('Content-Encoding') == 'gzip':
+                    body = gzip.decompress(body)
+                with request_lock:
+                    metrics.append(json.loads(body))
+                self.send_response(201)
+                self.send_header('Content-Length', '0')
+                self.end_headers()
+
             def do_GET(self):
                 path = urlsplit(self.path).path
                 with request_lock:
@@ -130,12 +143,29 @@ def main():
                     fixture = data['fixtures'][name]
                     page = fixture['html'].replace('https://client.test',
                                                          f'http://127.0.0.1:{self.server.server_port}')
+                    loader = fixture.get('loader')
+                    bootstraps = {
+                        'vanilla': "new LazyLoad({elements_selector:'.lazy',threshold:0});",
+                        'rocket': "new LazyLoad({elements_selector:'[data-lazy-src]',data_src:'lazy-src',data_srcset:'lazy-srcset',data_sizes:'lazy-sizes',threshold:0});",
+                        'swiper8': "new Swiper('.swiper',{lazy:{checkInView:true,loadPrevNext:false}});",
+                        'swiper11': "new Swiper('.swiper',{});",
+                    }
+                    if loader:
+                        setup = '<script>window.lazyLoadOptions={threshold:0};</script>' if loader == 'litespeed' else ''
+                        setup += f'<script src="/test-library/{loader}.js"></script>'
+                        setup += '<script>' + bootstraps.get(loader, '') + '</script>'
+                        page = page.replace('</body>', setup + '</body>')
+                        if loader.startswith('swiper'):
+                            page = page.replace('</head>', '<style>.swiper{overflow:hidden}.swiper-wrapper{display:flex}.swiper-slide{flex-shrink:0;width:100%}</style></head>')
                     script = r'''<script>
                     let before=[];
                     setTimeout(()=>{
+                        if((location.pathname.includes('/parser-')||location.pathname.includes('/css-lcp-collect'))){window.dispatchEvent(new PageTransitionEvent('pagehide'));}
+                    },650);
+                    setTimeout(()=>{
                         before=performance.getEntriesByType('resource').map(e=>e.name)
                           .filter(u=>u.includes('/_faaaster/images/')||u.includes('/wp-content/uploads/'));
-                        if(location.pathname.includes('background-lazy')){window.scrollTo(0,3100);}
+                        if(location.pathname.includes('background-lazy')||location.pathname.includes('/lazy-')){window.scrollTo(0,3000);}
                         for(const node of document.querySelectorAll('[data-bg]')){
                             const value=node.getAttribute('data-bg');
                             node.style.backgroundImage=value.startsWith('url(')?value:'url("'+value+'")';
@@ -143,16 +173,23 @@ def main():
                     },100);
                     setTimeout(()=>{
                         const image=document.querySelector('img');
-                        const bg=document.querySelector('[data-faaaster-bg]');
+                        const bg=document.querySelector('[data-faaaster-bg],#hero');
+                        const detector=document.getElementById('optimization-detective-detect-args');
+                        const xpath=image?image.getAttribute('data-od-xpath'):null;
                         document.documentElement.setAttribute('data-test-result',encodeURIComponent(JSON.stringify({
                             before, dpr:devicePixelRatio, width:innerWidth,
                             src:image?image.getAttribute('src'):null,
                             currentSrc:image?image.currentSrc:null,
                             background:bg?getComputedStyle(bg).backgroundImage:null,
                             classes:bg?bg.className:null, inline:bg?bg.getAttribute('style'):null,
-                            scroll:scrollY, top:bg?bg.getBoundingClientRect().top:null
+                            scroll:scrollY, top:bg?bg.getBoundingClientRect().top:null,
+                            detectorInBody:!!detector&&document.body.contains(detector),
+                            xpath,
+                            others:[...document.querySelectorAll('.other')].map(n=>getComputedStyle(n).backgroundImage),
+                            imported:bg?getComputedStyle(bg).getPropertyValue('--test-import').trim():null,
+                            trackedPaths:[...document.querySelectorAll('[data-od-xpath]')].map(e=>e.getAttribute('data-od-xpath'))
                         })));
-                    },500);
+                    },(location.pathname.includes('/parser-')||location.pathname.includes('/css-lcp-collect'))?1000:500);
                     </script>'''
                     self.send_response(200)
                     self.send_header('Content-Type', 'text/html; charset=utf-8')
@@ -162,6 +199,32 @@ def main():
                     self.send_header('Content-Length', str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                    return
+                if path == '/test-import.css':
+                    body = b'.hero{--test-import:loaded}'
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'text/css')
+                    self.send_header('Content-Length', str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if path.startswith('/test-library/'):
+                    file = plugin / 'test/image-optimization/fixtures/lazyload' / path.split('/')[-1]
+                elif path == '/wp-content/mu-plugins/faaaster-manager-plugin/assets/image-css-lcp.js':
+                    file = plugin / 'assets/image-css-lcp.js'
+                elif path.startswith('/wp-content/mu-plugins/faaaster-manager-plugin/vendor/image-optimization/'):
+                    file = plugin / 'vendor/image-optimization' / path.split('/vendor/image-optimization/', 1)[1]
+                else:
+                    file = None
+                if file is not None:
+                    if not file.resolve().is_relative_to(plugin) or not file.is_file():
+                        self.send_error(404)
+                        return
+                    self.send_response(200)
+                    self.send_header('Content-Type', 'application/javascript')
+                    self.send_header('Content-Length', str(file.stat().st_size))
+                    self.end_headers()
+                    self.wfile.write(file.read_bytes())
                     return
                 marker = '/wp-content/uploads/'
                 if marker not in path:
@@ -201,6 +264,25 @@ def main():
                  ('background-lazy', 2, 1280), ('background-lazy-important', 2, 1280),
                  ('background-layers', 2, 1280), ('data-bg', 2, 1280), ('data-bg-layers', 2, 1280),
                  ('data-bg-dormant', 2, 1280), ('background-cold', 2, 1280)]
+        for name, fixture in data['fixtures'].items():
+            if fixture.get('loader'):
+                cases.append((name, 1, 1280))
+                if name.endswith('-set'):
+                    cases.append((name, 2, 1280))
+        for name, fixture in data['fixtures'].items():
+            if fixture.get('css_collect'):
+                cases.append((name, 1, 1280))
+            elif fixture.get('css_lcp'):
+                if fixture.get('cover'):
+                    cases.extend(((name, 1, 390), (name, 3, 390)))
+                elif fixture.get('mobile'):
+                    cases.extend((name, dpr, width) for dpr in (1, 2) for width in (400, 1280))
+                elif name == 'css-lcp':
+                    cases.extend((name, dpr, 1280) for dpr in (1, 1.5, 2))
+                else:
+                    cases.append((name, 2, 1280))
+        cases.extend((name, 1, 1280) for name, fixture in data['fixtures'].items() if fixture.get('parser'))
+        cases.extend((name, 1, 1280) for name in ('style-block', 'style-hash', 'style-nonce', 'parser-repair'))
         try:
             for name, dpr, width in cases:
                 if args.case and name not in args.case:
@@ -208,6 +290,7 @@ def main():
                 with request_lock:
                     requests.clear()
                     failures.clear()
+                    metrics.clear()
                 profile = Path(temporary) / f'chrome-{name}-{dpr}-{width}'
                 chrome = Chrome(args.chrome, profile)
                 try:
@@ -219,8 +302,52 @@ def main():
                     assert not failures, (name, failures)
                 assert assets, (name, 'no image requested', observed)
                 assert len(assets) == len(set(assets)), (name, 'duplicate image downloads', assets)
-                assert all(p.startswith('/_faaaster/images/') for p in assets), (name, 'original fetched', assets)
-                if name.startswith('img') or name == 'picture':
+                if data['fixtures'][name].get('original'):
+                    assert all(not p.startswith('/_faaaster/images/') for p in assets), (name, assets)
+                else:
+                    assert all(p.startswith('/_faaaster/images/') for p in assets), (name, 'original fetched', assets)
+                if data['fixtures'][name].get('css_collect'):
+                    assert len(metrics) == 1, ('no CSS detector payload', requests, observed)
+                    geometry = metrics[0].get('faaasterCssLcp')
+                    native = metrics[0].get('lcpElementExternalBackgroundImage')
+                    assert geometry and native and geometry['url'] == native['url'], metrics
+                    assert geometry['width'] == 400 and geometry['height'] == 200, geometry
+                    assert len(assets) == 1 and '/w0/' in assets[0], assets
+                elif data['fixtures'][name].get('css_lcp'):
+                    expected = {1:480, 1.5:768, 2:960}.get(dpr)
+                    if data['fixtures'][name].get('cover'):
+                        expected = 1536 if dpr == 1 else 0
+                    if data['fixtures'][name].get('mobile') and width == 400:
+                        expected = 320 if dpr == 1 else 0
+                        assert 'small.png' in observed['background'], observed
+                    assert f'/w{expected}/' in observed['background'], observed
+                    if data['fixtures'][name].get('shared'):
+                        assert len(assets) == 2, (name, assets)
+                        assert len(observed['others']) == 2 and all('/w0/' in bg for bg in observed['others']), observed
+                    else:
+                        assert len(assets) == 1, ('CSS/preload mismatch', name, assets)
+                    if data['fixtures'][name].get('import'):
+                        assert observed['imported'] == 'loaded', observed
+                elif name.startswith('lazy-'):
+                    assert not observed['before'], (name, 'loaded before scrolling', observed)
+                    assert '/wp-content/uploads/' in observed['src'] and '/_faaaster/' not in observed['src'], observed
+                    assert '/_faaaster/images/' in observed['currentSrc'], observed
+                    assert len(assets) == 1, (name, 'extra image downloaded', assets)
+                    if not name.startswith('lazy-swiper11'):
+                        assert '/w0/' in observed['currentSrc'], observed
+                    if name.endswith('-set'):
+                        assert ('small.png' if dpr == 1 else 'large.png') in observed['currentSrc'], observed
+                elif name.startswith('style-'):
+                    assert len(assets) == 1, (name, assets)
+                    assert ('/_faaaster/images/' not in observed['background']) if name == 'style-hash' else ('/w0/' in observed['background']), observed
+                elif name.startswith('parser-'):
+                    assert observed['detectorInBody'], observed
+                    assert len(observed['trackedPaths']) == len(set(observed['trackedPaths'])), observed
+                    # OD maps DOM elements by their data-od-xpath attribute, not document.evaluate().
+                    # Verify this association through its real measurement module, including reconstructed inline tags.
+                    assert len(metrics) == 1, ('no real detector payload', requests, observed)
+                    assert any(e['xpath'] == observed['xpath'] and e['boundingClientRect']['width'] == 400 for e in metrics[0]['elements']), metrics
+                elif name.startswith('img') or name == 'picture':
                     assert '/wp-content/uploads/' in observed['src'] and '/_faaaster/' not in observed['src'], observed
                     assert '/_faaaster/images/' in observed['currentSrc'], observed
                 elif name == 'background-cold':
@@ -238,7 +365,7 @@ def main():
                         assert len(set(assets)) == 2, (name, assets)
                     else:
                         assert len(set(assets)) == 1, ('preload/CSS mismatch', name, assets)
-                print(f'OK Chrome {name}, viewport {width}, DPR {dpr}: {len(set(assets))} variant(s), no original')
+                print(f'OK Chrome {name}, viewport {width}, DPR {dpr}: {len(set(assets))} image(s)')
         finally:
             server.shutdown()
             thread.join(timeout=5)

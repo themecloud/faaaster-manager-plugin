@@ -6,11 +6,14 @@ class FaaasterImageVisitor
     private $sources;
     private $backgrounds;
     private $skipped = array();
+    private $enhancements;
+    private $rewrite_styles = true;
 
-    public function __construct(FaaasterImageSources $sources)
+    public function __construct(FaaasterImageSources $sources, $enhancements = true)
     {
         $this->sources = $sources;
         $this->backgrounds = new FaaasterImageBackgrounds($sources);
+        $this->enhancements = $enhancements;
     }
 
     public static function js_loaded($processor)
@@ -33,6 +36,11 @@ class FaaasterImageVisitor
         return $this->backgrounds->handles($processor);
     }
 
+    public function css_native_context($context)
+    {
+        return $this->backgrounds->css_native_context($context);
+    }
+
     public function prioritize_background($context, $native)
     {
         return $this->backgrounds->prioritize($context, $native);
@@ -48,6 +56,25 @@ class FaaasterImageVisitor
     {
         $processor = $context->processor;
         $tag = $processor->get_tag();
+        if ($tag === 'HTML' && $this->enhancements) {
+            $this->scan_csp($processor, $context);
+            return false;
+        }
+        if ($tag === 'STYLE' && $this->enhancements && FaaasterImageOptimization::feature_enabled('style_bg') && $this->rewrite_styles && method_exists($processor, 'set_modifiable_text')) {
+            $text = $processor->get_modifiable_text();
+            $rewritten = $this->backgrounds->rewrite_css($text);
+            if ($rewritten !== $text) { $processor->set_modifiable_text($rewritten); }
+            return false;
+        }
+        if ($tag === 'IMG' && self::js_loaded($processor)) {
+            if (FaaasterImageOptimization::feature_enabled('lazy') && !isset($this->skipped[$processor->get_xpath()])) {
+                $plan = $this->lazy_plan($processor);
+                if ($plan !== null) {
+                    foreach ($plan as $attribute => $value) { $processor->set_attribute($attribute, $value); }
+                }
+            }
+            return false;
+        }
         if ($tag !== 'PICTURE' && self::js_loaded($processor)
             && ($tag === 'IMG' || $processor->get_attribute('data-bg') === null)) {
             return false;
@@ -55,14 +82,84 @@ class FaaasterImageVisitor
         if ($tag === 'PICTURE') {
             $this->picture($processor);
         } elseif ($tag === 'IMG') {
-            if (!isset($this->skipped[$processor->get_xpath()])) {
+            if (FaaasterImageOptimization::feature_enabled('srcset') && !isset($this->skipped[$processor->get_xpath()])) {
                 $this->image($processor);
             }
         } else {
-            return $this->backgrounds->rewrite($context);
+            return $this->enhancements ? $this->backgrounds->rewrite($context) : false;
         }
         // Tracking/prioritization belongs to Image Prioritizer.
         return false;
+    }
+
+    public static function has_style_hash_policy(array $policies)
+    {
+        foreach ($policies as $policy) {
+            $directives = array();
+            foreach (explode(';', $policy) as $directive) {
+                $parts = preg_split('/\s+/', trim($directive), 2);
+                $name = strtolower($parts[0]);
+                if (!isset($directives[$name])) { $directives[$name] = isset($parts[1]) ? $parts[1] : ''; }
+            }
+            foreach (array('style-src-elem', 'style-src', 'default-src') as $name) {
+                if (isset($directives[$name])) {
+                    if (preg_match("/'sha(?:256|384|512)-[^']+'/i", $directives[$name])) { return true; }
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
+    private function scan_csp($processor, $context)
+    {
+        $policies = array();
+        foreach (headers_list() as $header) {
+            if (preg_match('/^Content-Security-Policy\s*:\s*(.*)$/i', $header, $match)) { $policies[] = $match[1]; }
+        }
+        $groups = FaaasterImageOptimization::feature_enabled('css_lcp')
+            ? FaaasterImageBackgrounds::css_lcp_groups($context->url_metric_group_collection) : array();
+        $targets = array(); $counts = array(); $styles = array();
+        foreach ($groups as $candidate) {
+            if ($candidate !== null) { $targets[FaaasterImageBackgrounds::css_identity($candidate['target'])] = $candidate['target']; }
+        }
+        $bookmark = 'faaaster-csp-scan';
+        $processor->set_bookmark($bookmark);
+        while ($processor->next_tag(array('tag_closers' => 'skip'))) {
+            if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
+            if ($targets && $processor->get_tag() === 'STYLE' && method_exists($processor, 'get_modifiable_text')) { $styles[] = $processor->get_modifiable_text(); }
+            foreach ($targets as $identity => $target) {
+                if (!self::js_loaded($processor) && FaaasterImageBackgrounds::matches_css_target($processor, $target)) { $counts[$identity] = ($counts[$identity] ?? 0) + 1; }
+            }
+            if ($processor->get_tag() === 'META' && strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') === 0) {
+                $policies[] = (string) $processor->get_attribute('content');
+            }
+        }
+        $processor->seek($bookmark);
+        $processor->release_bookmark($bookmark);
+        $this->rewrite_styles = !self::has_style_hash_policy($policies);
+        if ($targets) { $this->backgrounds->prepare_css_lcp($context, $groups, $styles, $counts, $this->rewrite_styles); }
+    }
+
+    private function lazy_plan($processor)
+    {
+        foreach (array('data-original', 'data-lazyload', 'data-bg') as $unsupported) {
+            if ($processor->get_attribute($unsupported) !== null) { return null; }
+        }
+        $plan = array();
+        foreach (array('data-src' => 'data-srcset', 'data-lazy-src' => 'data-lazy-srcset') as $src => $set) {
+            $raw = $processor->get_attribute($set);
+            if (is_string($raw) && trim($raw) !== '') {
+                $converted = $this->sources->convert_candidates($raw);
+                if ($converted === null) { return null; }
+                $plan[$set] = $converted;
+            } elseif (($raw === null || $raw === '') && $processor->get_attribute('srcset') === null) {
+                // A lazy loader must not replace an authored responsive set with our single density candidate.
+                $source = $this->sources->resolve($processor->get_attribute($src));
+                if ($source) { $plan[$set] = $this->sources->url($source) . ' 1x'; }
+            }
+        }
+        return $plan;
     }
 
     private function image($processor)
@@ -108,6 +205,7 @@ class FaaasterImageVisitor
         $images = array();
         $picture_sizes = '100vw';
         $valid = !self::js_loaded($processor);
+        $has_lazy = false;
         $bookmark = 'faaaster-picture-start';
         $processor->set_bookmark($bookmark);
         // Validate the whole picture first, to avoid mixed declarations / partial rewrites.
@@ -115,6 +213,7 @@ class FaaasterImageVisitor
             if ($processor->get_tag() === 'PICTURE' && $processor->is_tag_closer()) {
                 break;
             }
+            $has_lazy = $has_lazy || self::js_loaded($processor);
             if ($processor->get_current_depth() > $depth + 1 || self::js_loaded($processor)) {
                 $valid = false;
             }
@@ -146,6 +245,16 @@ class FaaasterImageVisitor
             }
         }
         $processor->seek($bookmark);
+        if (($has_lazy && !FaaasterImageOptimization::feature_enabled('lazy'))
+            || (!$has_lazy && !FaaasterImageOptimization::feature_enabled('srcset'))) {
+            foreach ($images as $xpath) { $this->skipped[$xpath] = true; }
+            $processor->release_bookmark($bookmark);
+            return;
+        }
+        if ($has_lazy) {
+            $this->lazy_picture($processor, $bookmark, $depth, $images);
+            return;
+        }
         if (!$valid) {
             foreach ($images as $xpath) {
                 $this->skipped[$xpath] = true;
@@ -173,6 +282,42 @@ class FaaasterImageVisitor
         }
         $processor->seek($bookmark);
         $processor->release_bookmark($bookmark);
+    }
+
+    private function lazy_picture($processor, $bookmark, $depth, array $images)
+    {
+        $picture_xpath = $processor->get_xpath();
+        $valid = !self::js_loaded($processor);
+        while ($processor->next_tag(array('tag_closers' => 'visit'))) {
+            $tag = $processor->get_tag();
+            if ($tag === 'PICTURE' && $processor->is_tag_closer()) { break; }
+            if ($processor->get_current_depth() > $depth + 1) { $valid = false; }
+            if ($processor->is_tag_closer() || !in_array($tag, array('IMG', 'SOURCE'), true)) { continue; }
+            if ($this->lazy_plan($processor) === null) { $valid = false; }
+            if ($tag === 'SOURCE') {
+                $type = $processor->get_attribute('type');
+                if ($type !== null && !in_array(strtolower((string) $type), array('image/jpeg', 'image/png', 'image/webp'), true)) { $valid = false; }
+                foreach (array('data-srcset', 'data-lazy-srcset') as $attribute) {
+                    $raw = $processor->get_attribute($attribute);
+                    if ($raw !== null && !$this->sources->candidates($raw)) { $valid = false; }
+                }
+            }
+        }
+        $processor->seek($bookmark);
+        if ($valid) {
+            while ($processor->next_tag(array('tag_closers' => 'visit'))) {
+                $tag = $processor->get_tag();
+                if ($tag === 'PICTURE' && $processor->is_tag_closer()) { break; }
+                if ($processor->is_tag_closer() || !in_array($tag, array('IMG', 'SOURCE'), true)) { continue; }
+                $plan = $this->lazy_plan($processor);
+                foreach ($plan as $attribute => $value) { $processor->set_attribute($attribute, $value); }
+                if ($tag === 'SOURCE' && $plan) { $processor->set_attribute('type', 'image/webp'); }
+            }
+        }
+        $processor->seek($bookmark);
+        $processor->release_bookmark($bookmark);
+        $this->skipped[$picture_xpath] = true;
+        foreach ($images as $xpath) { $this->skipped[$xpath] = true; }
     }
 
 }

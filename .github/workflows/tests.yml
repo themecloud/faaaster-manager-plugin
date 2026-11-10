@@ -21,6 +21,13 @@ jobs:
           coverage: none
       - name: Lint
         run: find . -name '*.php' -not -path './.git/*' -print0 | xargs -0 -n1 php -l > /dev/null
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: CSS LCP collector syntax and tests
+        run: |
+          node --input-type=module --check < assets/image-css-lcp.js
+          node test/image-optimization/css-lcp.mjs
       - name: Auth cookie tests
         run: php test/auth-cookie.php
       - name: Cache module tests
