@@ -110,6 +110,22 @@ class FaaasterImageSources
         );
     }
 
+    /** Normalize an observed variant to its full-size source identity, without filesystem I/O. */
+    public static function variant_key($url)
+    {
+        if (!is_string($url)) { return null; }
+        $parts = wp_parse_url($url);
+        $home = wp_parse_url(home_url('/'));
+        if (!$parts || (isset($parts['query']) || isset($parts['fragment'])) || isset($parts['user']) || isset($parts['pass'])) { return null; }
+        if (isset($parts['host']) && (strtolower($parts['host']) !== strtolower($home['host'])
+            || ($parts['port'] ?? null) !== ($home['port'] ?? null))) { return null; }
+        if (isset($parts['scheme']) && !in_array(strtolower($parts['scheme']), array('http', 'https'), true)) { return null; }
+        $path = $parts['path'] ?? '';
+        if (strlen($path) > self::MAX_PATH_LENGTH || !preg_match('~^' . preg_quote(self::PREFIX, '~')
+            . 'w(?:0|[1-9][0-9]{0,3})/(m[1-9][0-9]{0,11}-s[1-9][0-9]{0,11})(/wp-content/uploads/.+)\z~', $path, $match)) { return null; }
+        return self::PREFIX . 'w0/' . $match[1] . $match[2];
+    }
+
     private static function animated($file, $extension)
     {
         if ($extension !== 'png' && $extension !== 'webp') {
@@ -155,7 +171,7 @@ class FaaasterImageSources
     }
 
     /** Parse all-or-nothing: unsupported/custom srcset syntax must stay untouched. */
-    public function candidates($srcset)
+    public function candidates($srcset, $allow_unsupported = false)
     {
         if (!is_string($srcset) || trim($srcset) === '') {
             return array();
@@ -163,21 +179,42 @@ class FaaasterImageSources
         $items = array();
         $kind = null;
         foreach (explode(',', $srcset) as $candidate) {
-            if (!preg_match('/^\s*(\S+)\s+([1-9][0-9]*w|(?:[0-9]+(?:\.[0-9]+)?)x)\s*$/', $candidate, $match)) {
+            $pattern = $allow_unsupported
+                ? '/^\s*(\S+?)(?:\s+([1-9][0-9]*w|(?:[0-9]+(?:\.[0-9]+)?)x))?\s*$/'
+                : '/^\s*(\S+)\s+([1-9][0-9]*w|(?:[0-9]+(?:\.[0-9]+)?)x)\s*$/';
+            if (!preg_match($pattern, $candidate, $match)) {
                 return null;
             }
-            $type = substr($match[2], -1);
-            if (($kind !== null && $kind !== $type) || (float) $match[2] <= 0) {
+            $descriptor = isset($match[2]) ? $match[2] : '';
+            $type = $descriptor === '' ? 'x' : substr($descriptor, -1);
+            if (($kind !== null && $kind !== $type) || ($descriptor !== '' && (float) $descriptor <= 0)) {
                 return null;
             }
             $source = $this->resolve($match[1]);
-            if (!$source || ($type === 'w' && (int) $match[2] !== $source['width'])) {
-                return null;
+            if (!$source || ($type === 'w' && (int) $descriptor !== $source['width'])) {
+                if (!$allow_unsupported) { return null; }
+                $source = null;
             }
             $kind = $type;
-            $items[] = array('source' => $source, 'descriptor' => $match[2]);
+            $items[] = array('source' => $source, 'descriptor' => $descriptor, 'url' => $match[1]);
         }
         return $items;
+    }
+
+    /** Lazy sets keep authored candidates/descriptors; unsupported sources remain original. */
+    public function convert_candidates($srcset)
+    {
+        if (is_string($srcset) && preg_match('/(?:^|,)\s*data:/i', $srcset)) { return null; }
+        $candidates = $this->candidates($srcset, true);
+        if ($candidates === null) { return null; }
+        $changed = false;
+        $out = array();
+        foreach ($candidates as $candidate) {
+            $url = $candidate['source'] ? $this->url($candidate['source']) : $candidate['url'];
+            $changed = $changed || $url !== $candidate['url'];
+            $out[] = $url . ($candidate['descriptor'] !== '' ? ' ' . $candidate['descriptor'] : '');
+        }
+        return $changed ? implode(', ', $out) : $srcset;
     }
 
     public function srcset(array $source, array $candidates, $expand = true)

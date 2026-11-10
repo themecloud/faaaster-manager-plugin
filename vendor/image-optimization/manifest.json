@@ -12,7 +12,7 @@
       "build/web-vitals.js.map": "9102bfec2793dc1f433929da2108dc4278d2915f2a9546af9a0599bf946d5e4f",
       "class-od-data-validation-exception.php": "9e266482c77ec77166fb157283265e76d55008f912e4a3a767d6bbf77c62f9c6",
       "class-od-element.php": "1b2579020aec0282d6d0857634cc645ebba25acdf29c6b2f82fed6dec84c208f",
-      "class-od-html-tag-processor.php": "45e72658e003fe1ef8a629859863a0c890037d4a3ddc8103b319659d859f3317",
+      "class-od-html-tag-processor.php": "e195d03d1ca60cfcd55aee95c87fa9f83558d340f72d5106f78da2c9cf3e3691",
       "class-od-link-collection.php": "f0e47a85f892fa23dccb30a458329e2ae89352b778e0e5640613937e380cf527",
       "class-od-strict-url-metric.php": "946a14c1dbdb3628eea244e80ed9926acb08f7d9627ee14b12e2d34fc3a60554",
       "class-od-tag-visitor-context.php": "406c6875fb7757b663082507c3171e7681f6149a095f3819f36e4f935e162507",
@@ -30,7 +30,7 @@
       "helper.php": "4ad0ee803a03b544236f0b047ecf9c67ec70861e459bb9c8ab9a4397bfae0912",
       "hooks.php": "3f6bbf35ba7e9480bb5d8ef1ab96d3bc08f799a42d4ebad993e3bd6bcc1b6c3d",
       "load.php": "bccbac31b8beb0c4ee37dc57549d2b603b7c433bf860633f4cfa10cf297a1c73",
-      "optimization.php": "f1f859a4cef521c1f01d90ab90ab55eb8f52c62c9acdc51280c510fd7dea429d",
+      "optimization.php": "b9e0042ae6014a6546a1f41bc810b9abf951a4587af0bdc83cdd6997565298f5",
       "readme.txt": "871b01cfe6d2273ac09f976088e6a73cebb0c7f0c654488581b380e9feac4b48",
       "site-health.php": "30c69dea10973fbcba77ed9bd40a1369cbf277741c071aa61170cfbf35e6fe6a",
       "storage/class-od-rest-url-metrics-store-endpoint.php": "95141f71f68218fa83b4cca509d6d93cd654a7330ff6d72fa2ef52060aa1888f",
@@ -40,7 +40,18 @@
       "storage/data.php": "6ed2f37dc7db325e896bd069402f43e5c191137d95799372de1d4e740b37838c",
       "types.ts": "faa905d641974e4bff55ed79fc92f16cf7e19215aea4fe57e2ef0592f24c748d",
       "uninstall.php": "1b0781cb28f1f6064b63bc6670d09ca33281235d239e113877effe722d30c8b9"
-    }
+    },
+    "patches": [
+      {
+        "revision": 1,
+        "file": "patches/optimization-detective-parser-v1.patch",
+        "sha256": "6d20cb34b4506ee6eb600a284e633ddb7f531098a19ce3799e2941b01b8fb2b4",
+        "upstream_files": {
+          "class-od-html-tag-processor.php": "45e72658e003fe1ef8a629859863a0c890037d4a3ddc8103b319659d859f3317",
+          "optimization.php": "f1f859a4cef521c1f01d90ab90ab55eb8f52c62c9acdc51280c510fd7dea429d"
+        }
+      }
+    ]
   },
   "image-prioritizer": {
     "version": "1.0.0-beta4",

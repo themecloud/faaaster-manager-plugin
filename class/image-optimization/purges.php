@@ -11,13 +11,21 @@ class FaaasterImagePurges
 
     public static function fingerprint($collection, $url_metrics_id = 0)
     {
+        if (FaaasterImageOptimization::parser_revision()) {
+            $collection = FaaasterImageOptimization::decision_metrics($collection);
+        }
         $dimensions = $url_metrics_id ? get_post_meta($url_metrics_id, FaaasterImageBackgrounds::SOURCES_META, true) : array();
         $groups = array();
         foreach ($collection as $group) {
             $lcp = $group->get_lcp_element();
+            $external = $lcp ? $lcp->get_url_metric()->get('lcpElementExternalBackgroundImage') : null;
+            if (is_array($external) && isset($external['url'])) {
+                $source_key = FaaasterImageSources::variant_key($external['url']);
+                if ($source_key) { $external['url'] = $source_key; }
+            }
             $groups[] = array($group->get_minimum_viewport_width(), $group->get_maximum_viewport_width(),
                 $lcp ? $lcp->get_xpath() : null,
-                $lcp ? $lcp->get_url_metric()->get('lcpElementExternalBackgroundImage') : null);
+                $external);
         }
         $visible = array_map(function ($ratio) { return $ratio > 0; }, $collection->get_all_element_max_intersection_ratios());
         $positioned = $collection->get_all_elements_positioned_in_any_initial_viewport();
@@ -27,13 +35,92 @@ class FaaasterImagePurges
         return hash('sha256', wp_json_encode(array(
             'groups' => $groups, 'visible' => $visible, 'positioned' => $positioned,
             'ready' => $collection->get_first_group()->count() > 0 && $collection->get_last_group()->count() > 0,
-            'background_widths' => FaaasterImageBackgrounds::decisions($collection, is_array($dimensions) ? $dimensions : array(), FaaasterImageOptimization::resize_widths()),
+            'css_lcp' => FaaasterImageOptimization::feature_enabled('css_lcp')
+                ? FaaasterImageBackgrounds::css_lcp_decisions($collection, is_array($dimensions) ? $dimensions : array(), FaaasterImageOptimization::resize_widths()) : array(),
+            'background_widths' => FaaasterImageOptimization::feature_enabled('inline_bg')
+                ? FaaasterImageBackgrounds::decisions($collection, is_array($dimensions) ? $dimensions : array(), FaaasterImageOptimization::resize_widths()) : array(),
         )));
+    }
+
+    /** Injection failures and CSS coverage share one durable snapshot and SQL budget. */
+    public static function record_detection_failure()
+    {
+        self::record_counters(1, array());
+    }
+
+    public static function record_css_lcp_unmatched(array $increments)
+    {
+        self::record_counters(0, $increments);
+    }
+
+    private static function record_counters($injection_increment, array $increments)
+    {
+        if (FaaasterImageOptimization::is_cli()) { return; }
+        $lock = null;
+        try {
+            $lock = self::lock(0);
+            $data = FaaasterImageOptimization::read_detection_counter();
+            if ($data === null) {
+                wp_cache_delete(FaaasterImageOptimization::DETECTION_FAILURES_OPTION, 'options');
+                wp_cache_delete('notoptions', 'options');
+                $data = FaaasterImageOptimization::counter_totals(get_option(FaaasterImageOptimization::DETECTION_FAILURES_OPTION, 0));
+                $data['next_flush'] = 0;
+            }
+            $data['count'] += $injection_increment;
+            foreach ($increments as $reason => $increment) {
+                if (!in_array($reason, FaaasterImageOptimization::CSS_LCP_REASONS, true) || !is_int($increment) || $increment < 1) {
+                    throw new RuntimeException('Invalid image CSS coverage increment.');
+                }
+                $data['css_lcp_unmatched'][$reason] += $increment;
+            }
+            $checkpoint = time() >= $data['next_flush'];
+            if ($checkpoint) { $data['next_flush'] = time() + 60; }
+            // Persist both the increments and the shared SQL budget before database I/O.
+            self::write_detection_counter($data);
+            if ($checkpoint) {
+                wp_cache_delete(FaaasterImageOptimization::DETECTION_FAILURES_OPTION, 'options');
+                wp_cache_delete('notoptions', 'options');
+                $totals = array('count' => $data['count'], 'css_lcp_unmatched' => $data['css_lcp_unmatched']);
+                if (!update_option(FaaasterImageOptimization::DETECTION_FAILURES_OPTION, $totals, false)
+                    && get_option(FaaasterImageOptimization::DETECTION_FAILURES_OPTION, 0) !== $totals) {
+                    throw new RuntimeException('Unable to checkpoint image detection counters.');
+                }
+            }
+        } catch (\Throwable $e) {
+            FaaasterCache::log_exception('image-optimization:detection-counter', $e);
+        } finally {
+            if (is_resource($lock)) {
+                flock($lock, LOCK_UN);
+                fclose($lock);
+            }
+        }
+    }
+
+    private static function write_detection_counter(array $data)
+    {
+        $path = FaaasterImageOptimization::detection_counter_path();
+        $temporary = @tempnam(dirname($path), '.detection-');
+        if (!$temporary) { throw new RuntimeException('Unable to create image detection counter.'); }
+        try {
+            $json = wp_json_encode($data);
+            if (@file_put_contents($temporary, $json, LOCK_EX) !== strlen($json)
+                || !@chmod($temporary, 0644) || !@rename($temporary, $path)) {
+                throw new RuntimeException('Unable to persist image detection counter.');
+            }
+        } finally {
+            if (is_file($temporary)) { unlink($temporary); }
+        }
     }
 
     public static function stored($context)
     {
         if (FaaasterImageOptimization::is_cli()) {
+            return;
+        }
+        // Old cached HTML may still submit its old ETag. Store it normally, but never
+        // use those samples to request new XPath-based cache decisions.
+        if (FaaasterImageOptimization::parser_revision()
+            && $context->url_metric->get(FaaasterImageOptimization::PARSER_METRIC_PROPERTY) !== FaaasterImageOptimization::parser_revision()) {
             return;
         }
         $id = (int) $context->url_metrics_id;

@@ -140,7 +140,7 @@ FaaasterImagePurges::fingerprint($jitter_metrics_b, 20);
 check('recording decisions never rewrites source metadata', $GLOBALS['meta_writes'][FaaasterImageBackgrounds::SOURCES_META], $writes);
 $purge_context = (object) array('url_metrics_id' => 20, 'url_metric_group_collection' => $jitter_metrics_a,
     'url_metric' => $jitter_metrics_a->get_flattened_url_metrics()[0],
-    'request' => new class { public function get_param($name) { return 4242; } });
+    'request' => new class { public function get_param($name) { return $name === 'faaaster_parser_revision' ? 1 : 4242; } });
 $purge_count = count(faaaster_cache()->queue()->urls);
 FaaasterImagePurges::stored($purge_context);
 FaaasterImagePurges::flush(4242);
