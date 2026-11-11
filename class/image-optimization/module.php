@@ -27,6 +27,11 @@ class FaaasterImageOptimization
     private static $versions = array();
     /** Store-route refusals of this PHP request: spl_object_id => [WP_REST_Request, WP_Error]. */
     private static $refusals = array();
+    /** feature_configuration() for the state described by $features_key. */
+    private static $features_key = null;
+    private static $features = null;
+    /** Whether the page being optimized contains "http-equiv"; null before OD's buffer is seen. */
+    private static $meta_policy_possible = null;
 
     public static function is_cli()
     {
@@ -74,6 +79,11 @@ class FaaasterImageOptimization
         $value = array_key_exists('IMAGE_OPTIMIZATION_DISABLED_FEATURES', $_SERVER)
             ? ($_SERVER['IMAGE_OPTIMIZATION_DISABLED_FEATURES'] === false ? null : $_SERVER['IMAGE_OPTIMIZATION_DISABLED_FEATURES'])
             : getenv('IMAGE_OPTIMIZATION_DISABLED_FEATURES');
+        // Asked for every tag of the page through feature_enabled(): parse once per state.
+        $key = var_export($value, true) . '|' . (self::enabled() ? 1 : 0) . '|' . self::$status . '|' . self::parser_revision();
+        if (self::$features_key === $key) {
+            return self::$features;
+        }
         $configuration = self::parse_disabled_features($value);
         if (!self::enabled() || self::$status === 'suspended') {
             $configuration['features'] = array();
@@ -82,7 +92,22 @@ class FaaasterImageOptimization
             $configuration['features'] = array_values(array_intersect($configuration['features'], array('lazy', 'srcset')));
         }
         $configuration['features_disabled'] = array_values(array_diff(self::FEATURES, $configuration['features']));
+        self::$features_key = $key;
+        self::$features = $configuration;
         return $configuration;
+    }
+
+    /** Just before OD parses the page (priority 10): can it hold a CSP META element at all? */
+    public static function note_buffer($buffer)
+    {
+        self::$meta_policy_possible = !is_string($buffer) || stripos($buffer, 'http-equiv') !== false;
+        return $buffer;
+    }
+
+    /** Unknown (no buffer seen) counts as possible: the visitor then walks the page as before. */
+    public static function meta_policy_possible()
+    {
+        return self::$meta_policy_possible !== false;
     }
 
     public static function feature_enabled($name)
@@ -218,6 +243,7 @@ class FaaasterImageOptimization
         self::$status = 'active';
         self::$reason = self::parser_revision() ? null : 'od_parser_unpatched';
         if (self::$reason === null && self::feature_configuration()['features_source'] === 'invalid') { self::$reason = 'features_invalid'; }
+        add_filter('od_template_output_buffer', array(__CLASS__, 'note_buffer'), 9);
         add_action('od_register_tag_visitors', array(__CLASS__, 'register_rewriter'), 5);
         add_action('od_register_tag_visitors', array(__CLASS__, 'limit_visitors'), 20);
         if (self::parser_revision()) {

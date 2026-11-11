@@ -126,6 +126,32 @@ $hash_csp = "style-src 'sha256-abc='";
 $csp_meta = '<meta http-equiv="Content-Security-Policy" content="' . esc_attr($hash_csp) . '">';
 list($page) = transform_html(str_replace('</head>', $csp_meta . '</head>', $css_document));
 check('late CSP meta protects all STYLE text', strpos($page, '/_faaaster/images/'), false);
+// 0.15.3: the CSP pre-walk is skipped when OD's buffer holds no "http-equiv", META-only otherwise.
+$with_meta = str_replace('</head>', $csp_meta . '</head>', $css_document);
+FaaasterImageOptimization::note_buffer($with_meta);
+check('buffer with http-equiv keeps the CSP walk', FaaasterImageOptimization::meta_policy_possible());
+list($page) = transform_html($with_meta);
+check('noted buffer: late CSP meta still protects STYLE text', strpos($page, '/_faaaster/images/'), false);
+FaaasterImageOptimization::note_buffer(strtoupper($with_meta));
+check('http-equiv found whatever its case', FaaasterImageOptimization::meta_policy_possible());
+FaaasterImageOptimization::note_buffer($css_document);
+check('buffer without http-equiv skips the CSP walk', FaaasterImageOptimization::meta_policy_possible(), false);
+list($skipped_page) = transform_html($css_document);
+FaaasterImageOptimization::note_buffer(null);
+list($walked_page) = transform_html($css_document);
+check('skipping the CSP walk changes nothing', $skipped_page, $walked_page);
+check('STYLE still converted without the walk', strpos($skipped_page, '/_faaaster/images/') !== false);
+$noscript_meta = str_replace('</head>', '<noscript>' . $csp_meta . '</noscript></head>', $css_document);
+FaaasterImageOptimization::note_buffer($noscript_meta);
+list($page) = transform_html($noscript_meta);
+check('CSP meta inside NOSCRIPT still ignored', strpos($page, '/_faaaster/images/') !== false);
+$upper = new OD_HTML_Tag_Processor('<img DATA-SRC="/wp-content/uploads/a.png" src="x.png"><div data-id="1" data-settings="{}"></div><p></p>');
+$upper->next_tag(array('tag_closers' => 'skip'));
+check('uppercase loader attribute detected', FaaasterImageVisitor::js_loaded($upper));
+$upper->next_tag(array('tag_closers' => 'skip'));
+check('unrelated data attributes ignored', FaaasterImageVisitor::js_loaded($upper), false);
+$upper->next_tag(array('tag_closers' => 'skip'));
+check('tag without data attributes ignored', FaaasterImageVisitor::js_loaded($upper), false);
 list($page) = transform_html(str_replace('<style>', '<style nonce="abc">', str_replace('</head>', '<meta http-equiv="Content-Security-Policy" content="style-src &apos;nonce-abc&apos;"></head>', $css_document)));
 check('nonce STYLE remains eligible', strpos($page, '/w0/') !== false && strpos($page, 'nonce="abc"') !== false);
 check('style hash header policy detected', FaaasterImageVisitor::has_style_hash_policy(array($hash_csp)));
@@ -168,10 +194,12 @@ foreach ($library_manifest as $name => $library) {
     check('loader license retained: ' . $name, hash_file('sha256', __DIR__ . '/fixtures/lazyload/' . $library['license']), $library['license_sha256']);
 }
 $vendor_manifest = json_decode(file_get_contents(__DIR__ . '/../../vendor/image-optimization/manifest.json'), true);
-$parser_patch = $vendor_manifest['optimization-detective']['patches'][0];
-check('declared backport diff integrity', hash_file('sha256', __DIR__ . '/../../vendor/image-optimization/' . $parser_patch['file']), $parser_patch['sha256']);
-foreach ($vendor_manifest['optimization-detective']['patches'][0]['upstream_files'] as $name => $hash) {
-    check('original client OD fixture: ' . $name, hash_file('sha256', __DIR__ . '/fixtures/od-upstream/' . $name), $hash);
+check('declared OD backports', array_column($vendor_manifest['optimization-detective']['patches'], 'revision'), array(1, 2));
+foreach ($vendor_manifest['optimization-detective']['patches'] as $od_patch) {
+    check('declared backport diff integrity: revision ' . $od_patch['revision'], hash_file('sha256', __DIR__ . '/../../vendor/image-optimization/' . $od_patch['file']), $od_patch['sha256']);
+    foreach ($od_patch['upstream_files'] as $name => $hash) {
+        check('original client OD fixture: ' . $name, hash_file('sha256', __DIR__ . '/fixtures/od-upstream/' . $name), $hash);
+    }
 }
 
 $placeholder = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';

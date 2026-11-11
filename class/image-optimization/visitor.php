@@ -18,8 +18,14 @@ class FaaasterImageVisitor
 
     public static function js_loaded($processor)
     {
+        // Called for every tag of the page: one read of the data-* names instead of seven lookups.
+        $names = $processor->get_attribute_names_with_prefix('data-');
+        if (!$names) {
+            return false;
+        }
+        $names = array_flip($names);
         foreach (array('data-src', 'data-srcset', 'data-lazy-src', 'data-lazy-srcset', 'data-original', 'data-lazyload', 'data-bg') as $name) {
-            if ($processor->get_attribute($name) !== null) {
+            if (isset($names[$name])) {
                 return true;
             }
         }
@@ -28,7 +34,7 @@ class FaaasterImageVisitor
 
     public function skips($processor)
     {
-        return self::js_loaded($processor) || isset($this->skipped[$processor->get_xpath()]);
+        return self::js_loaded($processor) || ($this->skipped && isset($this->skipped[$processor->get_xpath()]));
     }
 
     public function handles_background($processor)
@@ -123,20 +129,31 @@ class FaaasterImageVisitor
         foreach ($groups as $candidate) {
             if ($candidate !== null) { $targets[FaaasterImageBackgrounds::css_identity($candidate['target'])] = $candidate['target']; }
         }
-        $bookmark = 'faaaster-csp-scan';
-        $processor->set_bookmark($bookmark);
-        while ($processor->next_tag(array('tag_closers' => 'skip'))) {
-            if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
-            if ($targets && $processor->get_tag() === 'STYLE' && method_exists($processor, 'get_modifiable_text')) { $styles[] = $processor->get_modifiable_text(); }
-            foreach ($targets as $identity => $target) {
-                if (!self::js_loaded($processor) && FaaasterImageBackgrounds::matches_css_target($processor, $target)) { $counts[$identity] = ($counts[$identity] ?? 0) + 1; }
+        // Without CSS LCP targets this pre-walk only looks for a CSP META element: skip it when the
+        // page holds no "http-equiv" at all, and otherwise visit META elements only.
+        if ($targets || FaaasterImageOptimization::meta_policy_possible()) {
+            $bookmark = 'faaaster-csp-scan';
+            $processor->set_bookmark($bookmark);
+            $query = $targets ? array('tag_closers' => 'skip') : array('tag_name' => 'META', 'tag_closers' => 'skip');
+            while ($processor->next_tag($query)) {
+                if (!$targets) {
+                    if (strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') !== 0) { continue; }
+                    if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
+                    $policies[] = (string) $processor->get_attribute('content');
+                    continue;
+                }
+                if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
+                if ($processor->get_tag() === 'STYLE' && method_exists($processor, 'get_modifiable_text')) { $styles[] = $processor->get_modifiable_text(); }
+                foreach ($targets as $identity => $target) {
+                    if (!self::js_loaded($processor) && FaaasterImageBackgrounds::matches_css_target($processor, $target)) { $counts[$identity] = ($counts[$identity] ?? 0) + 1; }
+                }
+                if ($processor->get_tag() === 'META' && strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') === 0) {
+                    $policies[] = (string) $processor->get_attribute('content');
+                }
             }
-            if ($processor->get_tag() === 'META' && strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') === 0) {
-                $policies[] = (string) $processor->get_attribute('content');
-            }
+            $processor->seek($bookmark);
+            $processor->release_bookmark($bookmark);
         }
-        $processor->seek($bookmark);
-        $processor->release_bookmark($bookmark);
         $this->rewrite_styles = !self::has_style_hash_policy($policies);
         if ($targets) { $this->backgrounds->prepare_css_lcp($context, $groups, $styles, $counts, $this->rewrite_styles); }
     }

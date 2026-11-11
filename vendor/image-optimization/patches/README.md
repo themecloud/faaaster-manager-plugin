@@ -1,4 +1,6 @@
-# Optimization Detective parser backport, revision 1
+# Optimization Detective backports (revisions 1 and 2)
+
+## Revision 1 — parser
 
 Prepared with manager-plugin 0.15.0 on 2026-11-10. Based on the official
 Optimization Detective **1.0.0-beta7** archive recorded in `../manifest.json`.
@@ -18,7 +20,7 @@ The original two files used to exercise a competing client-installed copy are
 also retained under `test/image-optimization/fixtures/od-upstream/`, outside
 the release archive. Their hashes must match the manifest's `upstream_files`.
 
-## Scope
+### Scope
 
 The processor searches the open stack for the nearest matching closer, closes
 intervening tags and ignores unmatched closers. Tags, attributes and sibling
@@ -88,6 +90,26 @@ OD's detector associates actual DOM elements with `data-od-xpath` attributes;
 it does not evaluate these paths against the browser's reconstructed tree.
 The browser regression therefore checks the real detector's outgoing metric
 against the tagged image, including the `<em>` reconstruction case.
+
+## Revision 2 — no stored URL Metrics in pages under WP_DEBUG
+
+Prepared with manager-plugin 0.15.3 on 2026-11-11, on top of revision 1.
+`optimization-detective-detection-v2.patch` changes `detection.php` only; the
+manifest records its original hash, patched hash and patch hash, and the original
+file is kept in `test/image-optimization/fixtures/od-upstream/detection.php`.
+
+Upstream adds `urlMetricGroupCollection` (every stored URL Metric of the page) to
+the detector arguments whenever `WP_DEBUG` is on. That JSON is printed into every
+optimized page, kept in the page cache and downloaded by every visitor: 148 KB on
+the www.faaaster.io home page (11/11/2026). `detect.js` treats the property as
+optional. It is now included only when `WP_DEBUG` is on **and** the filter
+`faaaster_od_detection_url_metric_group_collection` returns true. `isDebug` and
+the browser console logging are unchanged.
+
+```sh
+cd optimization-detective
+patch -p1 < /path/to/optimization-detective-detection-v2.patch
+```
 
 ## Validation and upstream follow-up
 

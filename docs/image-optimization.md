@@ -1,9 +1,10 @@
-# Image optimization — manager-plugin 0.15.2
+# Image optimization — manager-plugin 0.15.3
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
-plugin to install. OD has the declared parser/injection backport revision 1; IP
-and compiled upstream assets remain unchanged. Archive origins, upstream/patched
+plugin to install. OD has the declared backports revision 1 (parser/injection) and
+revision 2 (no stored URL Metrics printed under WP_DEBUG); IP and compiled upstream
+assets remain unchanged. Archive origins, upstream/patched
 SHA-256 hashes and the reproducible patch are pinned in
 `vendor/image-optimization/manifest.json` and `patches/README.md` alongside it.
 
@@ -31,6 +32,21 @@ Release 0.15.2 keeps those store-route refusals when another plugin's `rest_pre_
 Pro's `ACF_Rest_Api::initialize` does, seen on www.faaaster.io on 11/11/2026): a refused
 request is emptied for every later callback, so nothing decompresses or parses it, and the
 refusal is returned again by a last callback (`PHP_INT_MAX`) on both hooks.
+
+Release 0.15.3 removes most of the module's cost on uncached pages (measured on the
+www.faaaster.io home page, 422 KB of HTML, about 1,600 visited tags):
+- the rewriter leaves tags without `data-bg` or an inline `url(` before building their
+  XPath or hashing; loader attributes are read once (`data-*` names), feature switches
+  are parsed once per state, and the IP wrappers build an XPath only for marked tags;
+- the CSP pre-walk is skipped when OD's buffer holds no `http-equiv`, and visits META
+  elements only when there is no CSS LCP target; STYLE blocks without both `background`
+  and `url(` are returned untouched, and the CSS scanner jumps between significant bytes;
+- OD backport revision 2: under `WP_DEBUG`, the stored URL Metrics (148 KB on that page)
+  are no longer printed into every optimized page unless
+  `faaaster_od_detection_url_metric_group_collection` returns true.
+Locally, OD's walk plus the visitors went from 70 ms to 27 ms on that page (bare walk:
+11.6 ms); `php test/image-optimization/run.php bench` with `BENCH_HTML=<page>` reproduces
+the measurement.
 
 ## Activation and prerequisites
 
