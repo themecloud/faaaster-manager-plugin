@@ -99,6 +99,11 @@ class FaaasterImageSources
             return null;
         }
         $path = rtrim($base['path'], '/') . '/' . implode('/', array_map('rawurlencode', $decoded));
+        // Emitted raw inside url("…"), CSS attribute selectors and srcset: URL-safe bytes only
+        // (rawurlencode guarantees it for the file, not for the uploads base path).
+        if (!preg_match('~^/[A-Za-z0-9/._\~%-]+$~D', $path)) {
+            return null;
+        }
         // Reserve the longest emitted width segment so every candidate is signable by px2.
         if (strlen(self::PREFIX . 'w2560/m' . $mtime . '-s' . $size . $path) > self::MAX_PATH_LENGTH) {
             return null;

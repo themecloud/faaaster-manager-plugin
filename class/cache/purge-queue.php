@@ -98,6 +98,12 @@ class FaaasterCachePurgeQueue
         return $this->transport->flush_object_cache($site['home_host']);
     }
 
+    /** Une purge totale est en file (false si l'anti-rafale l'a refusée). */
+    public function all_pending()
+    {
+        return $this->all;
+    }
+
     public function has_pending()
     {
         return $this->all || !empty($this->urls) || !empty($this->cf_urls);

@@ -79,4 +79,75 @@ check_metric('non-CSS LCP can clear its optional geometry', $nullable_metric->ge
 $geometry_body['faaasterCssLcp']['height'] = 0;
 try { new OD_Strict_URL_Metric(array_merge(metric_request('1', $geometry_body)->get_json_params(), $read_only)); throw new RuntimeException('Invalid CSS geometry accepted.'); }
 catch (OD_Data_Validation_Exception $e) { check_metric('invalid geometry rejected by real WP schema', true); }
+
+// Anonymous store route: bounded before WordPress parses anything, refused while not active,
+// quota on new URL Metrics posts after validation; OD's own availability check stays untouched.
+class OD_URL_Metrics_Post_Type {
+    const SLUG = 'od_url_metrics';
+    public static function get_post($slug) { return $slug === str_repeat('e', 32) ? (object) array('ID' => 9) : null; }
+}
+function wp_count_posts($type) { return (object) array('publish' => $GLOBALS['url_metrics_posts'], 'draft' => 0); }
+$status = new ReflectionProperty('FaaasterImageOptimization', 'status');
+if (PHP_VERSION_ID < 80100) { $status->setAccessible(true); }
+function store_request($body, $encoding = null, $slug = null) {
+    $request = new WP_REST_Request('POST', FaaasterImageOptimization::STORE_ROUTE);
+    $request->set_header('Content-Type', 'application/json');
+    if ($encoding !== null) { $request->set_header('Content-Encoding', $encoding); }
+    if ($slug !== null) { $request->set_query_params(array('slug' => $slug)); }
+    $request->set_body($body);
+    return $request;
+}
+function error_status($result) { return $result instanceof WP_Error ? $result->get_error_data()['status'] : $result; }
+$json = wp_json_encode($body);
+$status->setValue(null, 'active');
+$request = store_request(gzencode($json), 'gzip');
+check_metric('bounded gzip body accepted', FaaasterImageOptimization::pre_dispatch_metric_store(null, null, $request), null);
+check_metric('decompressed body handed to OD', $request->get_body(), $json);
+check_metric('OD no longer sees a gzip encoding', $request->get_header('Content-Encoding'), null);
+// About 60 MiB once decompressed (deflate tops out near 1:1000), built in chunks.
+$deflate = deflate_init(ZLIB_ENCODING_GZIP, array('level' => 9));
+$bomb = '';
+$zeros = str_repeat('0', 1024 * 1024);
+for ($i = 0; $i < 60; $i++) { $bomb .= deflate_add($deflate, $zeros, ZLIB_NO_FLUSH); }
+$bomb .= deflate_add($deflate, '', ZLIB_FINISH);
+unset($zeros);
+check_metric('decompression bomb fits the compressed limit', strlen($bomb) < 64 * 1024);
+$started = microtime(true);
+check_metric('decompression bomb refused', error_status(FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request($bomb, 'gzip'))), 413);
+check_metric('decompression stops at the bound', microtime(true) - $started < 1.0);
+unset($bomb);
+check_metric('compressed body over 64 KiB refused', error_status(FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request(random_bytes(65537), 'gzip'))), 413);
+check_metric('corrupt gzip refused', error_status(FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request('not gzip', 'gzip'))), 413);
+check_metric('raw body over the metric bound refused', error_status(FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request(str_repeat(' ', FaaasterImageOptimization::MAX_METRIC_BYTES + 1)))), 413);
+check_metric('raw body at the bound accepted', FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request(str_repeat(' ', FaaasterImageOptimization::MAX_METRIC_BYTES))), null);
+check_metric('OD availability check (empty body) untouched', FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request('')), null);
+check_metric('other routes untouched', FaaasterImageOptimization::pre_dispatch_metric_store(null, null, new WP_REST_Request('POST', '/wp/v2/posts')), null);
+check_metric('OD metric size capped', FaaasterImageOptimization::maximum_metric_size(1048576), FaaasterImageOptimization::MAX_METRIC_BYTES);
+$GLOBALS['url_metrics_posts'] = FaaasterImageOptimization::MAX_URL_METRICS_POSTS;
+check_metric('new URL refused once the quota is reached', error_status(FaaasterImageOptimization::guard_metric_store(null, array(), store_request($json, null, str_repeat('n', 32)))), 507);
+check_metric('known URL keeps collecting at the quota', FaaasterImageOptimization::guard_metric_store(null, array(), store_request($json, null, str_repeat('e', 32))), null);
+$GLOBALS['url_metrics_posts'] = FaaasterImageOptimization::MAX_URL_METRICS_POSTS - 1;
+check_metric('new URL accepted below the quota', FaaasterImageOptimization::guard_metric_store(null, array(), store_request($json, null, str_repeat('n', 32))), null);
+$validation = new WP_Error('rest_missing_callback_param', 'Missing parameter(s): slug', array('status' => 400));
+check_metric('validation error passes through (OD availability check)', FaaasterImageOptimization::guard_metric_store($validation, array(), store_request('')), $validation);
+$status->setValue(null, 'suspended');
+check_metric('suspended: submission refused before parsing', error_status(FaaasterImageOptimization::pre_dispatch_metric_store(null, null, store_request($json))), 503);
+check_metric('suspended: validated submission refused', error_status(FaaasterImageOptimization::guard_metric_store(null, array(), store_request($json))), 503);
+check_metric('suspended: availability check still validated natively', FaaasterImageOptimization::guard_metric_store($validation, array(), store_request('')), $validation);
+$status->setValue(null, 'disabled');
+
+// Stamping edits the validated, sanitized parameters: no second parse of the raw body.
+require_once ABSPATH . 'wp-includes/rest-api/class-wp-rest-server.php';
+$sanitized = new WP_REST_Request('POST', FaaasterImageOptimization::STORE_ROUTE);
+$sanitized->set_header('Content-Type', 'application/json');
+$sanitized->set_query_params(array('faaaster_parser_revision' => '1'));
+$sanitized->set_body(wp_json_encode(array('url' => 'https://client.test/page/', 'viewport' => array('width' => '1200', 'height' => '800'), 'elements' => array())));
+$sanitized->set_attributes(array('args' => rest_get_endpoint_args_for_schema(OD_Strict_URL_Metric::get_json_schema())));
+check_metric('string viewport passes WP validation', $sanitized->has_valid_params(), true);
+$sanitized->sanitize_params();
+$raw_body = $sanitized->get_body();
+apply_filters('rest_request_before_callbacks', null, array(), $sanitized);
+check_metric('stamping leaves the raw body alone', $sanitized->get_body(), $raw_body);
+check_metric('sanitized integer survives stamping', $sanitized->get_json_params()['viewport']['width'], 1200);
+check_metric('stamp present on sanitized params', $sanitized->get_json_params()['faaasterParserRevision'], 1);
 echo 'OK metric revision: ' . $GLOBALS['checks'] . " checks with actual WP REST schema\n";
