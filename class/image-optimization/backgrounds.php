@@ -20,8 +20,16 @@ class FaaasterImageBackgrounds
 
     public function handles($processor)
     {
+        // Called for every tag of the page: the XPath is only built for an element we marked.
+        if (!$this->handled) {
+            return false;
+        }
+        $id = $processor->get_attribute('data-faaaster-bg');
+        if (!is_string($id)) {
+            return false;
+        }
         $xpath = $processor->get_xpath();
-        return isset($this->handled[$xpath]) && $this->handled[$xpath]['id'] === $processor->get_attribute('data-faaaster-bg');
+        return isset($this->handled[$xpath]) && $this->handled[$xpath]['id'] === $id;
     }
 
     /** The native IP identity plus our geometry, consistently observed within a viewport group. */
@@ -162,6 +170,10 @@ class FaaasterImageBackgrounds
     /** Stylesheet conversion is restricted to background declarations, preserving other URL uses. */
     public function rewrite_css($css)
     {
+        // A background declaration with an url() token needs both words (see background_urls()).
+        if (stripos($css, 'background') === false || stripos($css, 'url(') === false) {
+            return $css;
+        }
         $edits = array();
         $adapted = array();
         foreach (self::background_urls($css, true) as $token) {
@@ -180,7 +192,7 @@ class FaaasterImageBackgrounds
         foreach (array_reverse($edits) as $edit) {
             $css = substr_replace($css, $edit[2], $edit[0], $edit[1]);
         }
-        $offset = self::css_rules_offset($css);
+        $offset = $adapted ? self::css_rules_offset($css) : null;
         if ($adapted && $offset !== null) {
             // Every element/pseudo-element starts at the existing w0 value, without inheriting a parent's variant.
             $prefix = '*,::before,::after{';
@@ -261,16 +273,18 @@ class FaaasterImageBackgrounds
     {
         $p = $context->processor;
         $this->mark_css_lcp($p);
+        // Called for every tag of the page. Almost none carries an image: leave before building the
+        // XPath or hashing. Without a literal url( no token can be found (see urls()).
+        $data = $p->get_attribute('data-bg');
+        $is_data = is_string($data) && trim($data) !== '';
+        $style = $is_data ? null : $p->get_attribute('style');
+        if (!$is_data && (!is_string($style) || stripos($style, 'url(') === false)) {
+            return false;
+        }
         if (!FaaasterImageOptimization::feature_enabled('inline_bg')) { return false; }
         $xpath = $p->get_xpath();
         $id = substr(hash('sha256', $xpath . '|' . $this->next_id++), 0, 16);
-        $data = $p->get_attribute('data-bg');
-        $style = $p->get_attribute('style');
-        $is_data = is_string($data) && trim($data) !== '';
         $value = $is_data ? $data : $style;
-        if (!is_string($value)) {
-            return false;
-        }
         $tokens = $is_data ? self::urls($value) : self::background_urls($value);
         if ($is_data && !$tokens) {
             // Common loaders expect a bare URL and wrap it in url() themselves.
@@ -520,6 +534,11 @@ class FaaasterImageBackgrounds
         $depth = 0;
         $length = strlen($css);
         for ($i = 0; $i <= $length; $i++) {
+            // Only these bytes change the state below: jump over runs of other bytes in C.
+            if ($i < $length) {
+                $skip = strcspn($css, "\\\"'/(){};", $i);
+                if ($skip > 0) { $i += $skip - 1; continue; }
+            }
             if ($i < $length && $css[$i] === '\\') { $i++; continue; }
             if ($i < $length && ($css[$i] === '"' || $css[$i] === "'")) { $i = self::string_end($css, $i); continue; }
             if ($i < $length && substr($css, $i, 2) === '/*') { $end = strpos($css, '*/', $i + 2); $i = $end === false ? $length : $end + 1; continue; }

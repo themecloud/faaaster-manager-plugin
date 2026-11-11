@@ -1,0 +1,16 @@
+--- a/detection.php
++++ b/detection.php
+@@ -156,7 +156,12 @@
+ 	if ( is_user_logged_in() ) {
+ 		$detect_args['restApiNonce'] = wp_create_nonce( 'wp_rest' );
+ 	}
+-	if ( WP_DEBUG ) {
++	/*
++	 * Faaaster backport, revision 2: upstream printed the whole stored collection into every optimized page
++	 * whenever WP_DEBUG is on (148 KB on a production page, kept in the page cache and downloaded by every
++	 * visitor). detect.js treats it as optional; it is now only included on explicit request.
++	 */
++	if ( WP_DEBUG && (bool) apply_filters( 'faaaster_od_detection_url_metric_group_collection', false ) ) {
+ 		$detect_args['urlMetricGroupCollection'] = $group_collection;
+ 	}
+ 

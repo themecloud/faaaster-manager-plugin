@@ -9,7 +9,7 @@ if (!$core || !is_file($core . '/wp-includes/html-api/class-wp-html-tag-processo
 }
 if (!isset($argv[1])) {
     $failed = 0;
-    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'unpatched', 'upgrade-v015', 'rest-unavailable', 'manifest-invalid', 'cache-unavailable', 'storm', 'cli-disabled', 'cli-enabled', 'purges', 'counter', 'metrics') as $case) {
+    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'wp-debug', 'incompatible', 'unpatched', 'upgrade-v015', 'rest-unavailable', 'manifest-invalid', 'cache-unavailable', 'storm', 'cli-disabled', 'cli-enabled', 'purges', 'counter', 'metrics') as $case) {
         passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . escapeshellarg($case), $code);
         $failed += $code !== 0;
     }
@@ -26,7 +26,7 @@ $root = realpath($root);
 define('ABSPATH', rtrim($core, '/') . '/');
 define('WP_CONTENT_DIR', $root);
 define('WP_PLUGIN_DIR', $root . '/plugins');
-define('WP_DEBUG', false);
+define('WP_DEBUG', $case === 'wp-debug');
 define('SCRIPT_DEBUG', false);
 define('DAY_IN_SECONDS', 86400);
 define('WEEK_IN_SECONDS', 604800);
@@ -71,6 +71,7 @@ function wp_get_inline_script_tag($script, $attributes = array()) {
 function wp_trigger_error($function, $message, $level = E_USER_NOTICE) { $GLOBALS['od_warnings'][] = array($function, $message); }
 function _doing_it_wrong($name, $message, $version) { throw new RuntimeException($name . ': ' . $message); }
 function wp_parse_url($v, $component = -1) { return parse_url($v, $component); }
+function trailingslashit($v) { return rtrim($v, '/\\') . '/'; }
 function home_url($path = '') { return 'https://client.test' . $path; }
 function site_url($path = '') { return home_url($path); }
 function wp_upload_dir($time = null, $create = true) { return array('baseurl' => home_url('/wp-content/uploads'), 'basedir' => WP_CONTENT_DIR . '/uploads'); }
@@ -465,6 +466,25 @@ function transform_html($html, $collection = null, $url_metrics_id = 10) {
     do_action('od_finish_template_optimization', new OD_Template_Optimization_Context($groups, $links, array(), 'test-page', $url_metrics_id));
     return array($processor->get_updated_html(), $links->get_html(), $links->get_response_header());
 }
+// Not part of the suite: `php run.php bench` with BENCH_HTML=<page.html> [BENCH_RUNS=n] times the
+// OD walk with our visitors on a real page, against the bare walk (no visitor).
+if ($case === 'bench') {
+    $html = file_get_contents(getenv('BENCH_HTML'));
+    $collection = collection_for($html);
+    FaaasterImageOptimization::note_buffer($html);
+    $runs = max(1, (int) getenv('BENCH_RUNS') ?: 7);
+    $full = array(); $bare = array();
+    for ($i = 0; $i < $runs; $i++) {
+        $t = microtime(true); transform_html($html, $collection); $full[] = (microtime(true) - $t) * 1000;
+        $t = microtime(true);
+        $p = new OD_HTML_Tag_Processor($html);
+        while ($p->next_tag(array('tag_closers' => 'skip'))) { $p->set_bookmark('b'); $p->seek('b'); $p->release_bookmark('b'); }
+        $bare[] = (microtime(true) - $t) * 1000;
+    }
+    sort($full); sort($bare);
+    printf("bench %d KB: walk + visitors %.1f ms, bare walk %.1f ms (median of %d)\n", strlen($html) / 1024, $full[intdiv($runs, 2)], $bare[intdiv($runs, 2)], $runs);
+    exit(0);
+}
 $html = '<html><head></head><body><div><img id="hero" src="' . $large . '" width="1600" height="800" loading="lazy"><img id="below" width="400" src="' . $large . '"></div></body></html>';
 list($output, $preloads) = transform_html($html);
 check('hero made eager by native IP', strpos($output, 'fetchpriority="high"') !== false);
@@ -574,5 +594,16 @@ foreach ($manifest as $slug => $package) {
     foreach ($package['files'] as $file => $hash) {
         check('vendor integrity ' . $slug . '/' . $file, hash_file('sha256', $vendor . $slug . '/' . $file), $hash);
     }
+}
+if ($case === 'wp-debug') {
+    // OD revision 2: WP_DEBUG keeps the detector's debug flag but no longer prints the stored collection.
+    $debug_output = od_optimize_template_output_buffer($native_document);
+    check('WP_DEBUG: detector still injected', strpos($debug_output, 'id="optimization-detective-detect-args"') !== false);
+    check('WP_DEBUG: debug flag kept', strpos($debug_output, '"isDebug":true') !== false);
+    check('WP_DEBUG: stored URL Metrics not printed in the page', strpos($debug_output, 'urlMetricGroupCollection'), false);
+    add_filter('faaaster_od_detection_url_metric_group_collection', function () { return true; });
+    check('WP_DEBUG: collection printed on explicit request', strpos(od_optimize_template_output_buffer($native_document), 'urlMetricGroupCollection') !== false);
+    echo 'OK wp-debug: ' . $GLOBALS['checks'] . " checks\n";
+    exit(0);
 }
 echo 'OK active: ' . $GLOBALS['checks'] . " checks\n";

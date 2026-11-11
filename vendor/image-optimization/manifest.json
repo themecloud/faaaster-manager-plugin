@@ -26,7 +26,7 @@
       "detect-loader.min.js": "afbba01b6f4597e59d2424626d6b68fcab220143d3ec3a273d8096abb6c81d44",
       "detect.js": "99408fc7a891c743693aea1957c8366a06df93c5862666eea0db0fc4ba5ba14b",
       "detect.min.js": "70ff6c6b82edd20b1aa9fa5194c465c56b87d50ad403039d3abb7baccd9d9048",
-      "detection.php": "8866fcf8d9c625c1cf5cef389e85cf1cf9c23c17e306e2614d5d879c541c896d",
+      "detection.php": "a589ae85230adcdd5c4a82fe23e6fb436eaf2400dfaf40fc01b889abca0fc40d",
       "helper.php": "4ad0ee803a03b544236f0b047ecf9c67ec70861e459bb9c8ab9a4397bfae0912",
       "hooks.php": "3f6bbf35ba7e9480bb5d8ef1ab96d3bc08f799a42d4ebad993e3bd6bcc1b6c3d",
       "load.php": "bccbac31b8beb0c4ee37dc57549d2b603b7c433bf860633f4cfa10cf297a1c73",
@@ -49,6 +49,14 @@
         "upstream_files": {
           "class-od-html-tag-processor.php": "45e72658e003fe1ef8a629859863a0c890037d4a3ddc8103b319659d859f3317",
           "optimization.php": "f1f859a4cef521c1f01d90ab90ab55eb8f52c62c9acdc51280c510fd7dea429d"
+        }
+      },
+      {
+        "revision": 2,
+        "file": "patches/optimization-detective-detection-v2.patch",
+        "sha256": "62a22f7dadc836999f8bd46d6722287ab80c80cac08ff9d659f519f6130cc527",
+        "upstream_files": {
+          "detection.php": "8866fcf8d9c625c1cf5cef389e85cf1cf9c23c17e306e2614d5d879c541c896d"
         }
       }
     ]
