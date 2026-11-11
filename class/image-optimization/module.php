@@ -25,6 +25,8 @@ class FaaasterImageOptimization
     private static $reason = 'disabled';
     private static $sources;
     private static $versions = array();
+    /** Store-route refusals of this PHP request: spl_object_id => [WP_REST_Request, WP_Error]. */
+    private static $refusals = array();
 
     public static function is_cli()
     {
@@ -183,7 +185,9 @@ class FaaasterImageOptimization
         // From here the embedded copies are the effective ones: a suspension must silence them
         // (see halt()), and their anonymous store route is guarded whatever the status.
         add_filter('rest_pre_dispatch', array(__CLASS__, 'pre_dispatch_metric_store'), 5, 3);
+        add_filter('rest_pre_dispatch', array(__CLASS__, 'reassert_metric_refusal'), PHP_INT_MAX, 3);
         add_filter('rest_request_before_callbacks', array(__CLASS__, 'guard_metric_store'), 5, 3);
+        add_filter('rest_request_before_callbacks', array(__CLASS__, 'reassert_metric_refusal'), PHP_INT_MAX, 3);
         add_filter('od_maximum_url_metric_size', array(__CLASS__, 'maximum_metric_size'));
         // OD replays save_post/clean_post_cache 10 minutes after each sample: never on Faaaster.
         remove_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions');
@@ -311,6 +315,11 @@ class FaaasterImageOptimization
      * Before WordPress parses or validates anything (and before OD's own unbounded gzdecode):
      * refuse a submission while suspended or IP-locked, and bound the decompressed body. An empty
      * body (OD's REST availability check) keeps the native validation answer.
+     *
+     * A later rest_pre_dispatch callback may return null instead of the value it received and
+     * cancel the refusal: ACF Pro's ACF_Rest_Api::initialize does (www.faaaster.io, 11/11/2026).
+     * A refused request is therefore emptied for every later callback (nothing left to decompress
+     * or parse), and reassert_metric_refusal() returns the refusal again at the end of the chain.
      */
     public static function pre_dispatch_metric_store($result, $server, $request)
     {
@@ -322,32 +331,33 @@ class FaaasterImageOptimization
             return $result;
         }
         if (self::$status !== 'active') {
-            return self::store_refused();
+            return self::refuse($request, self::store_refused(), true);
         }
         if (class_exists('OD_Storage_Lock') && OD_Storage_Lock::is_locked()) {
-            return new WP_Error('url_metric_storage_locked', 'URL Metric storage is presently locked for the current IP.', array('status' => 423));
+            return self::refuse($request, new WP_Error('url_metric_storage_locked', 'URL Metric storage is presently locked for the current IP.', array('status' => 423)), true);
         }
         if ('gzip' === strtolower((string) $request->get_header('Content-Encoding'))) {
             // Same compressed bound as OD (navigator.sendBeacon limit).
             if (strlen($body) > 64 * 1024 || !function_exists('gzdecode')) {
-                return self::store_too_large();
+                return self::refuse($request, self::store_too_large(), true);
             }
             $decoded = @gzdecode($body, self::MAX_METRIC_BYTES + 1);
             if (!is_string($decoded) || strlen($decoded) > self::MAX_METRIC_BYTES) {
-                return self::store_too_large();
+                return self::refuse($request, self::store_too_large(), true);
             }
             // OD's decompression filter (priority 10) sees no Content-Encoding any more.
             $request->set_body($decoded);
             $request->remove_header('Content-Encoding');
         } elseif (strlen($body) > self::MAX_METRIC_BYTES) {
-            return self::store_too_large();
+            return self::refuse($request, self::store_too_large(), true);
         }
         return $result;
     }
 
     /**
      * After validation, before OD's callback. A validation error (OD's REST availability check
-     * expects rest_missing_callback_param) passes through untouched.
+     * expects rest_missing_callback_param) passes through untouched. A refusal is reasserted at the
+     * end of the chain, like the pre-dispatch one.
      */
     public static function guard_metric_store($response, $handler, $request)
     {
@@ -355,7 +365,7 @@ class FaaasterImageOptimization
             return $response;
         }
         if (self::$status !== 'active') {
-            return self::store_refused();
+            return self::refuse($request, self::store_refused(), false);
         }
         $slug = $request->get_param('slug');
         if (class_exists('OD_URL_Metrics_Post_Type') && is_string($slug) && !OD_URL_Metrics_Post_Type::get_post($slug)) {
@@ -364,10 +374,36 @@ class FaaasterImageOptimization
                 $total += (int) $count;
             }
             if ($total >= (int) apply_filters('faaaster_image_optimization_max_url_metrics_posts', self::MAX_URL_METRICS_POSTS)) {
-                return new WP_Error('faaaster_url_metrics_quota', 'URL Metrics storage quota reached for this site.', array('status' => 507));
+                return self::refuse($request, new WP_Error('faaaster_url_metrics_quota', 'URL Metrics storage quota reached for this site.', array('status' => 507)), false);
             }
         }
         return $response;
+    }
+
+    /**
+     * Last callback of rest_pre_dispatch and rest_request_before_callbacks: a refusal decided for
+     * this very request wins over whatever the callbacks in between returned.
+     */
+    public static function reassert_metric_refusal($result, $context, $request)
+    {
+        if (!is_object($request)) {
+            return $result;
+        }
+        $id = spl_object_id($request);
+        if (isset(self::$refusals[$id]) && self::$refusals[$id][0] === $request) {
+            return self::$refusals[$id][1];
+        }
+        return $result;
+    }
+
+    private static function refuse($request, $error, $empty_body)
+    {
+        if ($empty_body) {
+            $request->set_body('');
+            $request->remove_header('Content-Encoding');
+        }
+        self::$refusals[spl_object_id($request)] = array($request, $error);
+        return $error;
     }
 
     private static function store_refused()

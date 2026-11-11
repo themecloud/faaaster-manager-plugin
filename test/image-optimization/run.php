@@ -273,6 +273,8 @@ if ($case === 'manifest-invalid') {
     check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
     check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
     check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
+    check('suspended store refusal reasserted last', has_filter('rest_pre_dispatch', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
+    check('validated store refusal reasserted last', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
     echo "OK manifest-invalid\n";
     exit(0);
 }
@@ -281,6 +283,8 @@ if ($case === 'cache-unavailable') {
     check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
     check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
     check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
+    check('suspended store refusal reasserted last', has_filter('rest_pre_dispatch', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
+    check('validated store refusal reasserted last', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
     echo "OK cache-unavailable\n";
     exit(0);
 }
@@ -299,6 +303,8 @@ if ($case === 'rest-unavailable') {
     check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
     check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
     check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
+    check('suspended store refusal reasserted last', has_filter('rest_pre_dispatch', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
+    check('validated store refusal reasserted last', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'reassert_metric_refusal')), PHP_INT_MAX);
     echo "OK rest-unavailable\n";
     exit(0);
 }
