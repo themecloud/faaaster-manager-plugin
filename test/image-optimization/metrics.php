@@ -150,4 +150,54 @@ apply_filters('rest_request_before_callbacks', null, array(), $sanitized);
 check_metric('stamping leaves the raw body alone', $sanitized->get_body(), $raw_body);
 check_metric('sanitized integer survives stamping', $sanitized->get_json_params()['viewport']['width'], 1200);
 check_metric('stamp present on sanitized params', $sanitized->get_json_params()['faaasterParserRevision'], 1);
+
+// Through the real filter chains, with a plugin in between that returns null whatever it received:
+// ACF Pro's ACF_Rest_Api::initialize on rest_pre_dispatch (www.faaaster.io, 11/11/2026).
+function returns_null_whatever($value) { return null; }
+function od_like_decompress($result, $server, $request) {
+    if ('gzip' === $request->get_header('Content-Encoding')) { $GLOBALS['od_saw'][] = strlen($request->get_body()); }
+    return $result;
+}
+add_filter('rest_pre_dispatch', array('FaaasterImageOptimization', 'pre_dispatch_metric_store'), 5, 3);
+add_filter('rest_pre_dispatch', 'returns_null_whatever', 10, 1);
+add_filter('rest_pre_dispatch', 'od_like_decompress', 10, 3);
+add_filter('rest_pre_dispatch', array('FaaasterImageOptimization', 'reassert_metric_refusal'), PHP_INT_MAX, 3);
+add_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store'), 5, 3);
+add_filter('rest_request_before_callbacks', 'returns_null_whatever', 10, 1);
+add_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'reassert_metric_refusal'), PHP_INT_MAX, 3);
+function pre_dispatch($request) { return apply_filters('rest_pre_dispatch', null, null, $request); }
+function before_callbacks($request, $response = null) { return apply_filters('rest_request_before_callbacks', $response, array(), $request); }
+$GLOBALS['od_saw'] = array();
+$status->setValue(null, 'active');
+
+$request = store_request(str_repeat(' ', FaaasterImageOptimization::MAX_METRIC_BYTES + 1));
+check_metric('chain: oversized body refused despite a null-returning plugin', error_status(pre_dispatch($request)), 413);
+check_metric('chain: refused body emptied for every later callback', $request->get_body(), '');
+$request = store_request(gzencode(str_repeat('0', 4 * 1024 * 1024)), 'gzip');
+check_metric('chain: small bomb fits the compressed limit', strlen($request->get_body()) < 64 * 1024);
+check_metric('chain: decompression bomb refused', error_status(pre_dispatch($request)), 413);
+check_metric('chain: OD never decompresses a refused body', $GLOBALS['od_saw'], array());
+$request = store_request(random_bytes(65537), 'gzip');
+check_metric('chain: compressed body over 64 KiB refused', error_status(pre_dispatch($request)), 413);
+check_metric('chain: OD never sees the oversized compressed body', $GLOBALS['od_saw'], array());
+$request = store_request(gzencode($json), 'gzip');
+check_metric('chain: bounded gzip body goes through', pre_dispatch($request), null);
+check_metric('chain: OD receives the decompressed body', $request->get_body(), $json);
+check_metric('chain: OD sees no gzip encoding', $GLOBALS['od_saw'], array());
+check_metric('chain: OD availability check keeps its native path', pre_dispatch(store_request('')), null);
+check_metric('chain: other routes untouched', pre_dispatch(new WP_REST_Request('POST', '/wp/v2/posts')), null);
+check_metric('chain: a refusal belongs to its own request only', pre_dispatch(store_request($json)), null);
+
+$GLOBALS['url_metrics_posts'] = FaaasterImageOptimization::MAX_URL_METRICS_POSTS;
+check_metric('chain: quota refusal survives a null-returning plugin', error_status(before_callbacks(store_request($json, null, str_repeat('m', 32)))), 507);
+check_metric('chain: known URL keeps collecting at the quota', before_callbacks(store_request($json, null, str_repeat('e', 32))), null);
+$GLOBALS['url_metrics_posts'] = 0;
+check_metric('chain: no refusal invented for the availability check', before_callbacks(store_request(''), $validation), null);
+
+$status->setValue(null, 'suspended');
+$request = store_request($json);
+check_metric('chain: suspended submission refused before parsing', error_status(pre_dispatch($request)), 503);
+check_metric('chain: suspended body emptied', $request->get_body(), '');
+check_metric('chain: suspended validated submission refused', error_status(before_callbacks(store_request($json))), 503);
+$status->setValue(null, 'disabled');
 echo 'OK metric revision: ' . $GLOBALS['checks'] . " checks with actual WP REST schema\n";

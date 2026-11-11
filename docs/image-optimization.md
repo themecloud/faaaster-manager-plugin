@@ -1,4 +1,4 @@
-# Image optimization — manager-plugin 0.15.1
+# Image optimization — manager-plugin 0.15.2
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
@@ -25,6 +25,12 @@ the embedded upstream copies or their patch:
 - page purges no longer hold the per-post lock during Nginx/Cloudflare transport;
 - an unchanged `widths.json` is read without taking its lock; a purge-all throttled by the
   storm guard is retried; WP-CLI cron reschedules image purges instead of consuming them.
+
+Release 0.15.2 keeps those store-route refusals when another plugin's `rest_pre_dispatch` or
+`rest_request_before_callbacks` callback returns null instead of the value it received (ACF
+Pro's `ACF_Rest_Api::initialize` does, seen on www.faaaster.io on 11/11/2026): a refused
+request is emptied for every later callback, so nothing decompresses or parses it, and the
+refusal is returned again by a last callback (`PHP_INT_MAX`) on both hooks.
 
 ## Activation and prerequisites
 
@@ -147,7 +153,9 @@ waits for `window.load`, then idle when available. Collection uses native
 observers and posts the metric on page hide. The store route is guarded before WordPress
 parses the request: a non-empty submission is refused while the module is not active
 (503) or IP-locked (423); a gzip body over 64 KiB, or decompressing beyond 256 KiB, and
-a raw body over 256 KiB are refused (413) without unbounded decompression. OD's maximum
+a raw body over 256 KiB are refused (413) without unbounded decompression. A refused body is
+emptied, and the refusal is reasserted last on both hooks, so a plugin that drops filter values
+(ACF Pro) cannot cancel it. OD's maximum
 URL Metric size is lowered to the same 256 KiB. After validation, a submission for a URL
 without an OD post is refused (507) once the site holds 2,000 URL Metrics posts
 (`faaaster_image_optimization_max_url_metrics_posts`). An empty body (OD's availability
