@@ -9,7 +9,7 @@ if (!$core || !is_file($core . '/wp-includes/html-api/class-wp-html-tag-processo
 }
 if (!isset($argv[1])) {
     $failed = 0;
-    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'unpatched', 'upgrade-v015', 'rest-unavailable', 'manifest-invalid', 'cli-disabled', 'cli-enabled', 'purges', 'counter', 'metrics') as $case) {
+    foreach (array('disabled', 'disable-after-active', 'isolated', 'old-wp', 'private', 'active', 'incompatible', 'unpatched', 'upgrade-v015', 'rest-unavailable', 'manifest-invalid', 'cache-unavailable', 'storm', 'cli-disabled', 'cli-enabled', 'purges', 'counter', 'metrics') as $case) {
         passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__FILE__) . ' ' . escapeshellarg($case), $code);
         $failed += $code !== 0;
     }
@@ -109,7 +109,9 @@ class ImageTestQueue {
     public $urls = array();
     public $all = 0;
     public function enqueue_url($url, $source) { $this->urls[] = $url; return true; }
-    public function enqueue_all($source) { $this->all++; }
+    public $throttled = false;
+    public function enqueue_all($source) { if (!$this->throttled) { $this->all++; } }
+    public function all_pending() { return $this->all > 0; }
     public function flush($forced = false) { return array('confirmed' => true); }
 }
 class ImageTestCache {
@@ -137,6 +139,13 @@ if (in_array($case, array('cli-disabled', 'cli-enabled'), true)) {
     FaaasterImagePurges::stored(null);
     FaaasterImagePurges::flush(42);
     check('even direct CLI purge calls do nothing', faaaster_cache()->queue()->urls, array());
+    check('CLI without pending work schedules nothing', wp_next_scheduled('od_trigger_page_cache_invalidation', array(42)), false);
+    $GLOBALS['meta'][42]['_faaaster_image_pending'] = array(7 => array('url' => home_url('/p/'), 'attempts' => 0, 'next_attempt' => 0));
+    // WP-Cron (and `wp cron event run`) unschedule a single event before running it.
+    check('CLI cron has a handler for image purges', has_action('od_trigger_page_cache_invalidation', array('FaaasterImageOptimization', 'defer_cli_invalidation')), 1);
+    do_action('od_trigger_page_cache_invalidation', 42);
+    check('CLI cron reschedules pending purge instead of consuming it', wp_next_scheduled('od_trigger_page_cache_invalidation', array(42)) >= time() + 590);
+    check('CLI cron still purges nothing', faaaster_cache()->queue()->urls, array());
     echo "OK {$case}\n";
     exit(0);
 }
@@ -146,6 +155,24 @@ if ($case === 'rest-unavailable') {
 if ($case === 'upgrade-v015') {
     $GLOBALS['options'][FaaasterImageOptimization::RUNTIME_OPTION] = array('status' => 'active', 'reason' => null,
         'versions' => array('optimization_detective' => '1.0.0-beta7', 'image_prioritizer' => '1.0.0-beta4'), 'observed_at' => 123);
+}
+if ($case === 'storm') {
+    $GLOBALS['options'][FaaasterImageOptimization::RUNTIME_OPTION] = array('status' => 'active', 'observed_at' => time() - 100);
+    $_SERVER['IMAGE_OPTIMIZATION_ENABLED'] = 'false';
+    faaaster_cache()->queue()->throttled = true;
+    faaaster_image_optimization_boot();
+    check('throttled purge-all keeps previous observation', get_option(FaaasterImageOptimization::RUNTIME_OPTION)['status'], 'active');
+    faaaster_cache()->queue()->throttled = false;
+    $observe = new ReflectionMethod('FaaasterImageOptimization', 'observe');
+    if (PHP_VERSION_ID < 80100) { $observe->setAccessible(true); }
+    $observe->invoke(null);
+    check('later request purges once accepted', faaaster_cache()->queue()->all, 1);
+    check('observation recorded after accepted purge', get_option(FaaasterImageOptimization::RUNTIME_OPTION)['status'], 'disabled');
+    echo "OK storm\n";
+    exit(0);
+}
+if ($case === 'cache-unavailable') {
+    $GLOBALS['image_cache'] = null;
 }
 if ($case === 'disable-after-active') {
     $GLOBALS['options'][FaaasterImageOptimization::RUNTIME_OPTION] = array('status' => 'active', 'observed_at' => time() - 100);
@@ -243,11 +270,23 @@ if ($case === 'manifest-invalid') {
     check('invalid manifest suspends connector', faaaster_image_optimization_state()['reason'], 'manifest_unwritable_or_invalid');
     check('invalid manifest does not enable rewriting', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
     check('invalid manifest is not overwritten', file_get_contents(FaaasterImageOptimization::manifest_path()), '{bad json');
+    check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
+    check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
+    check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
     echo "OK manifest-invalid\n";
+    exit(0);
+}
+if ($case === 'cache-unavailable') {
+    check('missing cache module suspends connector', faaaster_image_optimization_state()['reason'], 'cache_module_unavailable');
+    check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
+    check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
+    check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
+    echo "OK cache-unavailable\n";
     exit(0);
 }
 if ($case === 'incompatible') {
     check('runtime conflict suspended', faaaster_image_optimization_state()['reason'], 'plugin_versions');
+    check('client copies keep their native behavior', apply_filters('od_can_optimize_response', true), true);
     check('no rewriter on conflict', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
     echo "OK incompatible\n";
     exit(0);
@@ -257,6 +296,9 @@ if ($case === 'rest-unavailable') {
     check('REST failure exposed', faaaster_image_optimization_state()['od_rest_api_unavailable'], true);
     check('REST failure retains our pending purge callback', has_action('od_trigger_page_cache_invalidation', array('FaaasterImagePurges', 'flush')), 10);
     check('REST failure does not install rewriter', has_action('od_register_tag_visitors', array('FaaasterImageOptimization', 'register_rewriter')), false);
+    check('suspended OD/IP never optimize responses', apply_filters('od_can_optimize_response', true), false);
+    check('suspended OD never replays save_post', has_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions'), false);
+    check('suspended store route guarded', has_filter('rest_request_before_callbacks', array('FaaasterImageOptimization', 'guard_metric_store')), 5);
     echo "OK rest-unavailable\n";
     exit(0);
 }
@@ -275,6 +317,11 @@ check('manifest re-publication succeeds', FaaasterImageOptimization::publish_man
 check('unchanged manifest retained', file_get_contents($manifest_path), $manifest_body);
 clearstatcache(true, $manifest_path);
 check('unchanged manifest not rewritten', fileinode($manifest_path), $manifest_inode);
+$widths_lock = dirname($manifest_path) . '/.widths.lock';
+@unlink($widths_lock);
+mkdir($widths_lock); // fopen() of the lock now fails: only the lock-free path can succeed
+check('current manifest published without taking the lock', FaaasterImageOptimization::publish_manifest());
+rmdir($widths_lock);
 $manifest['widths'][] = 750;
 file_put_contents($manifest_path, json_encode($manifest));
 check('previously declared width retained for cached URLs', FaaasterImageOptimization::publish_manifest());

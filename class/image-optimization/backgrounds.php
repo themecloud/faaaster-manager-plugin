@@ -297,6 +297,13 @@ class FaaasterImageBackgrounds
         if (!$items) {
             return false;
         }
+        // data-bg is author text (wp_kses_post keeps it for Contributors and Authors) that the
+        // adaptive rule below copies into a generated STYLE element: only the url() tokens we
+        // resolved are replaced. Anything else than plain layer syntax around them leaves the
+        // element exactly as authored, before any mutation.
+        if ($is_data && !self::safe_layer_remainder($value, $edits)) {
+            return false;
+        }
         foreach ($items as $item) {
             $this->dimensions[$xpath][] = array('width' => $item['source']['width'], 'height' => $item['source']['height']);
         }
@@ -354,10 +361,42 @@ class FaaasterImageBackgrounds
             }
         }
         $css .= self::render_rules($rules, $selector);
-        if ($css !== '') {
+        // Defence in depth: raw text of a STYLE element ends at "</style". Generated rules never
+        // hold "</" (URL-safe bytes, see FaaasterImageSources::resolve; "<=" only in media
+        // queries); if one ever does, the element keeps its w0 fallback without adaptive rules.
+        if ($css !== '' && strpos($css, '</') === false) {
             $p->append_head_html('<style data-faaaster-images="' . $id . '">' . $css . '</style>');
         }
         return true;
+    }
+
+    /**
+     * Author text around our url() replacements in a data-bg value: only layer syntax
+     * (keywords, colors, numbers, gradients) separated by commas. No quote, CSS escape,
+     * comment, ";", "{", "}", "!", "@", ":" or "<", and balanced parentheses: it can neither
+     * end the STYLE element nor leave the declaration it is copied into.
+     */
+    private static function safe_layer_remainder($value, array $edits)
+    {
+        $remainder = '';
+        $offset = 0;
+        foreach ($edits as $edit) { // ascending, non-overlapping url() tokens
+            $remainder .= substr($value, $offset, $edit[0] - $offset) . ' ';
+            $offset = $edit[0] + $edit[1];
+        }
+        $remainder .= substr($value, $offset);
+        if (!preg_match('~^[A-Za-z0-9\s,().%#+_/-]*$~D', $remainder)) { // no "*": no comment either
+            return false;
+        }
+        $depth = 0;
+        for ($i = 0, $n = strlen($remainder); $i < $n; $i++) {
+            if ($remainder[$i] === '(') {
+                $depth++;
+            } elseif ($remainder[$i] === ')' && --$depth < 0) {
+                return false;
+            }
+        }
+        return $depth === 0;
     }
 
     private static function render_rules(array $rules, $selector)

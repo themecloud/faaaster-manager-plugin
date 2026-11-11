@@ -89,6 +89,35 @@ list($data_cold) = transform_html($data_bg, $empty);
 check('data-bg without measures uses w0', strpos(first_tag_attribute($data_cold, 'DIV', 'data-bg'), '/w0/') !== false);
 check('data-bg without measures has no density rule', strpos($data_cold, 'dppx'), false);
 
+// data-bg is author text (Contributor/Author pass it through wp_kses_post) copied into a
+// generated STYLE element: nothing around our url() replacements may close or escape it.
+$data_bg_attacks = array(
+    'closing STYLE tag' => 'url(' . $large . ') </style><script>alert(document.domain)</script>',
+    'declaration break-out' => 'url(' . $large . ');}body{display:none',
+    'block break-out' => 'url(' . $large . ')}*{color:red',
+    'comment' => 'url(' . $large . ') /* x */',
+    'at-rule' => 'url(' . $large . '), @import x',
+    'CSS escape' => 'url(' . $large . ') \\3c /style\\3e ',
+    'quoted string' => 'url(' . $large . '), "</style>"',
+    'unbalanced parenthesis' => 'url(' . $large . '), rgb(0,0,0',
+    'stray closing parenthesis' => 'url(' . $large . ')), rgb(0,0,0)',
+    'important injection' => 'url(' . $large . ') !important',
+    'unresolved external URL' => 'url(' . $large . '), url(https://evil.example/x.png)',
+);
+foreach ($data_bg_attacks as $name => $value) {
+    $document = str_replace('data-bg="' . $large . '"', 'data-bg="' . esc_attr($value) . '"', $data_bg);
+    list($attack_output) = transform_html($document);
+    // An unsafe value leaves the element exactly as authored: no generated STYLE, no rewrite.
+    check('data-bg attack generates no STYLE: ' . $name, strpos($attack_output, 'data-faaaster-images='), false);
+    check('data-bg attack leaves no executable markup: ' . $name, strpos($attack_output, '<script>alert'), false);
+    check('data-bg attack element not taken over: ' . $name, first_tag_attribute($attack_output, 'DIV', 'data-faaaster-bg'), null);
+    check('data-bg attack keeps the authored attribute: ' . $name, first_tag_attribute($attack_output, 'DIV', 'data-bg'), $value);
+}
+$gradient = 'url("' . $large . '"), linear-gradient(90deg, rgba(0,0,0,.5) 0%, #fff 100%)';
+list($gradient_output) = transform_html(str_replace('data-bg="' . $large . '"', 'data-bg="' . esc_attr($gradient) . '"', $data_bg));
+check('data-bg gradient layer still adapted', substr_count($gradient_output, 'background-image:var('), 1);
+check('data-bg gradient layer kept in adaptive CSS', strpos($gradient_output, 'linear-gradient(90deg, rgba(0,0,0,.5) 0%, #fff 100%)!important') !== false);
+
 $important = str_replace(')">', ')!important">', $adaptive);
 list($important_output) = transform_html($important);
 check('inline important preserved', strpos(first_tag_attribute($important_output, 'DIV', 'style'), '!important') !== false);

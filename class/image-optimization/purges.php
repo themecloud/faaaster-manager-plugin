@@ -8,6 +8,7 @@ class FaaasterImagePurges
     const LAST = '_faaaster_image_purged';
     const INTERVAL = 600;
     const MAX_ATTEMPTS = 5;
+    private static $lock_failed = false;
 
     public static function fingerprint($collection, $url_metrics_id = 0)
     {
@@ -132,56 +133,75 @@ class FaaasterImagePurges
         if (!$post_id) {
             return;
         }
-        $lock = self::lock($post_id);
         try {
-            // Another PHP worker may have written while this request waited for the lock.
-            wp_cache_delete($post_id, 'post_meta');
-            wp_cache_delete($id, 'post_meta');
-            $fingerprint = self::fingerprint($context->url_metric_group_collection, $id);
-            $pending = self::pending($post_id);
-            if (get_post_meta($id, self::META, true) !== $fingerprint) {
-                // Persist the work before marking the decision as seen.
-                $pending[$id] = array('url' => $url, 'attempts' => 0, 'next_attempt' => 0);
-                if (update_post_meta($post_id, self::PENDING, $pending) !== false
-                    || get_post_meta($post_id, self::PENDING, true) === $pending) {
-                    update_post_meta($id, self::META, $fingerprint);
+            // Held only for postmeta I/O: purges run outside this lock (see flush()).
+            self::locked($post_id, function () use ($post_id, $id, $url, $context) {
+                // Another PHP worker may have written while this request waited for the lock.
+                wp_cache_delete($post_id, 'post_meta');
+                wp_cache_delete($id, 'post_meta');
+                $fingerprint = self::fingerprint($context->url_metric_group_collection, $id);
+                $pending = self::pending($post_id);
+                if (get_post_meta($id, self::META, true) !== $fingerprint) {
+                    // Persist the work before marking the decision as seen.
+                    $pending[$id] = array('url' => $url, 'attempts' => 0, 'next_attempt' => 0);
+                    if (update_post_meta($post_id, self::PENDING, $pending) !== false
+                        || get_post_meta($post_id, self::PENDING, true) === $pending) {
+                        update_post_meta($id, self::META, $fingerprint);
+                    }
                 }
-            }
-            self::schedule_pending($post_id, $pending);
-        } finally {
-            flock($lock, LOCK_UN);
-            fclose($lock);
+                self::schedule_pending($post_id, $pending);
+            });
+        } catch (\Throwable $e) {
+            // The sample is already stored: a lock or postmeta error must not become a REST 500.
+            FaaasterCache::log_exception('image-optimization:decision', $e);
         }
     }
 
     public static function flush($post_id)
     {
         if (FaaasterImageOptimization::is_cli()) {
+            // WP-CLI cron has no FPM configuration: leave the purge to the next HTTP cron run.
+            FaaasterImageOptimization::defer_cli_invalidation($post_id);
             return;
         }
         $post_id = (int) $post_id;
-        $lock = null;
+        self::$lock_failed = false;
         try {
-            $lock = self::lock($post_id);
-            self::flush_locked($post_id);
+            // 1. Claim due entries under the lock; their attempt is persisted before any I/O.
+            $batch = self::locked($post_id, function () use ($post_id) { return self::claim($post_id); });
+            if (!$batch) {
+                return;
+            }
+            // 2. Purge outside the lock: nginx (3 s budget) then Cloudflare must never hold up
+            //    the anonymous store requests that wait for this post's lock.
+            $result = self::send($batch);
+            // 3. Settle on a fresh read: a decision stored meanwhile stays pending.
+            self::locked($post_id, function () use ($post_id, $batch, $result) { self::settle($post_id, $batch, $result); });
         } catch (\Throwable $e) {
             // Cron must not die on a lock or transport error. Work stays in postmeta.
-            self::record_problem(is_resource($lock) ? 'purge_exception' : 'purge_lock_unavailable', $post_id);
+            self::record_problem(self::$lock_failed ? 'purge_lock_unavailable' : 'purge_exception', $post_id);
             FaaasterCache::log_exception('image-optimization:purge', $e);
-        } finally {
-            if (is_resource($lock)) {
-                flock($lock, LOCK_UN);
-                fclose($lock);
-            }
         }
     }
 
-    private static function flush_locked($post_id)
+    private static function locked($post_id, callable $callback)
+    {
+        $lock = self::lock($post_id);
+        try {
+            return $callback();
+        } finally {
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /** Due entries of one post, attempts persisted; null when nothing is due. */
+    private static function claim($post_id)
     {
         wp_cache_delete($post_id, 'post_meta');
         $pending = self::pending($post_id);
         if (!$pending) {
-            return;
+            return null;
         }
         $eligible = array();
         foreach ($pending as $id => $entry) {
@@ -202,31 +222,48 @@ class FaaasterImagePurges
             // Persist the attempt BEFORE any I/O, including an interrupted worker.
             $pending[$id]['attempts'] = $attempts + 1;
             $pending[$id]['next_attempt'] = time() + self::INTERVAL;
-            $eligible[] = $id;
+            $eligible[$id] = $pending[$id];
         }
         if (update_post_meta($post_id, self::PENDING, $pending) === false
             && get_post_meta($post_id, self::PENDING, true) !== $pending) {
             throw new RuntimeException('Unable to persist image purge attempts.');
         }
         self::schedule_pending($post_id, $pending);
-        $cache = faaaster_cache();
-        if (!$eligible || !$cache) {
-            if ($eligible && !$cache) {
-                self::record_problem('cache_module_unavailable', $post_id);
-            }
-            return;
+        if (!$eligible) {
+            return null;
         }
+        if (!faaaster_cache()) {
+            self::record_problem('cache_module_unavailable', $post_id);
+            return null;
+        }
+        return $eligible;
+    }
+
+    /** Lock-free: enqueue the claimed URLs and purge them now (nginx, then Cloudflare). */
+    private static function send(array $batch)
+    {
+        $cache = faaaster_cache();
         $queued = array();
-        foreach ($eligible as $id) {
-            if ($cache->queue()->enqueue_url($pending[$id]['url'], 'image-optimization')) {
+        foreach ($batch as $id => $entry) {
+            if ($cache && $cache->queue()->enqueue_url($entry['url'], 'image-optimization')) {
                 $queued[] = $id;
             }
         }
         $report = $queued ? $cache->queue()->flush(false) : array();
-        if (!empty($report['confirmed'])) {
-            foreach ($queued as $id) {
+        return array('queued' => $queued, 'confirmed' => !empty($report['confirmed']));
+    }
+
+    private static function settle($post_id, array $batch, array $result)
+    {
+        wp_cache_delete($post_id, 'post_meta');
+        $pending = self::pending($post_id);
+        if ($result['confirmed']) {
+            foreach ($result['queued'] as $id) {
                 update_post_meta($id, self::LAST, time());
-                unset($pending[$id]);
+                // stored() resets an entry for a new decision: that one still needs its purge.
+                if (isset($pending[$id]) && $pending[$id] == $batch[$id]) {
+                    unset($pending[$id]);
+                }
             }
             $previous_error = get_option(FaaasterImageOptimization::PURGE_ERROR_OPTION, array());
             if (is_array($previous_error) && isset($previous_error['post_id']) && $previous_error['post_id'] === $post_id) {
@@ -234,8 +271,8 @@ class FaaasterImagePurges
             }
         } else {
             $exhausted = false;
-            foreach ($eligible as $id) {
-                $exhausted = $exhausted || $pending[$id]['attempts'] >= self::MAX_ATTEMPTS;
+            foreach ($batch as $entry) {
+                $exhausted = $exhausted || $entry['attempts'] >= self::MAX_ATTEMPTS;
             }
             self::record_problem($exhausted ? 'purge_retry_exhausted' : 'purge_unconfirmed', $post_id);
         }
@@ -286,6 +323,7 @@ class FaaasterImagePurges
     /** Shared-volume lock scoped to one WP post; independent of the image URL whitelist. */
     private static function lock($post_id)
     {
+        self::$lock_failed = true;
         $directory = WP_CONTENT_DIR . '/cache/faaaster-image-optimization';
         if (!is_dir($directory) && !wp_mkdir_p($directory)) {
             throw new RuntimeException('Unable to create image purge lock directory.');
@@ -299,6 +337,7 @@ class FaaasterImagePurges
             fclose($lock);
             throw new RuntimeException('Unable to acquire image purge lock.');
         }
+        self::$lock_failed = false;
         return $lock;
     }
 }

@@ -1,4 +1,4 @@
-# Image optimization — manager-plugin 0.15.0
+# Image optimization — manager-plugin 0.15.1
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
@@ -12,6 +12,20 @@ It adds supported JavaScript lazy-load source sets, STYLE background conversion,
 adaptive CSS backgrounds identified as LCP, and per-feature cuts. IMG `src` stays original.
 Before activation, the compatible Nginx reader for `widths.json` must be deployed.
 
+Release 0.15.1 hardens 0.15.0 before activation, without changing the URL contract,
+the embedded upstream copies or their patch:
+- `data-bg` author text is never copied into a generated STYLE unless it is plain layer
+  syntax (stored XSS for Contributors/Authors in 0.13–0.15.0); emitted image paths are
+  restricted to URL-safe bytes;
+- a suspension after the embedded OD/IP are loaded silences them (no buffering, rewriting
+  or store), and OD's save_post replay is never registered;
+- the anonymous store route is bounded before WordPress parses it (gzip and raw body
+  capped at 256 KiB, IP lock checked first), refused while not active, and capped at
+  2,000 URL Metrics posts per site for new URLs;
+- page purges no longer hold the per-post lock during Nginx/Cloudflare transport;
+- an unchanged `widths.json` is read without taking its lock; a purge-all throttled by the
+  storm guard is retried; WP-CLI cron reschedules image purges instead of consuming them.
+
 ## Activation and prerequisites
 
 The module is **off by default**. It requires the exact value
@@ -23,9 +37,15 @@ change the wp-builder version pin.
 
 WP-CLI skips the image module: its container environment is not FPM hot config.
 It neither persists an image-module observation nor requests image-module purges.
+A WP-CLI cron run (`wp cron event run`) reschedules a pending image purge ten minutes
+later instead of consuming the event without a handler.
 The `hostmanager` request path preserves its existing isolation. Private, trial
 and `*.faaaster.dev` sites are excluded. Incompatible effective copies of the
-embedded plugins suspend the connector, including client-installed copies. A
+embedded plugins suspend the connector, including client-installed copies; those client
+copies keep their native behavior. Any other suspension once the embedded copies are
+loaded (cache module, uploads location, REST availability, manifest) silences them:
+`od_can_optimize_response` is false, the store route answers 503 to valid submissions,
+and OD's `od_trigger_post_update_actions` (save_post/clean_post_cache replay) stays removed. A
 compatible OD copy without the marker on the actual processor class keeps only
 our normal/lazy srcset rewrites (`srcset_only`, `od_parser_unpatched`); the client
 extension retains control of its own detection script and native visitors.
@@ -95,7 +115,11 @@ IP retains ownership of prioritization, native lazy loading and auto-sizes.
 
 Inline `background-image` and `background` support quoted/unquoted URLs, CSS
 escapes and multiple layers. Eligible non-IMG `data-bg` values are also rewritten;
-their existing loader still starts loading. In STYLE blocks only background and
+their existing loader still starts loading. Because the adaptive `data-bg` rule copies
+the authored value into a generated STYLE, text around the converted `url()` tokens must
+be plain layer syntax (letters, digits, spaces and `, ( ) . % # + _ / -`, balanced
+parentheses): any quote, escape, comment, `;`, `{`, `}`, `!`, `@`, `:` or `<` leaves the
+element exactly as authored. A generated STYLE is never emitted if it contains `</`. In STYLE blocks only background and
 background-image URLs are converted to w0; cursor URLs, custom properties and
 other declarations are preserved. Visible hash-based style CSP prevents STYLE
 rewriting; nonces are retained. External CSS files and video remain outside this lot.
@@ -120,7 +144,15 @@ receive w0 conversion; external stylesheet selectors are never evaluated by PHP.
 Upstream defaults are unchanged: four viewport groups (breakpoints 480, 600,
 782), three fresh samples per group, seven-day freshness. The detector loader
 waits for `window.load`, then idle when available. Collection uses native
-observers and posts the metric on page hide. Gzipped measurement modules total
+observers and posts the metric on page hide. The store route is guarded before WordPress
+parses the request: a non-empty submission is refused while the module is not active
+(503) or IP-locked (423); a gzip body over 64 KiB, or decompressing beyond 256 KiB, and
+a raw body over 256 KiB are refused (413) without unbounded decompression. OD's maximum
+URL Metric size is lowered to the same 256 KiB. After validation, a submission for a URL
+without an OD post is refused (507) once the site holds 2,000 URL Metrics posts
+(`faaaster_image_optimization_max_url_metrics_posts`). An empty body (OD's availability
+check) and validation errors keep their native answers. The parser revision is stamped
+on the validated, sanitized parameters, without re-encoding the body. Gzipped measurement modules total
 about 7.8 KB locally, excluding inline parameters and HTML metadata. The small
 `assets/image-css-lcp.js` extension is declared only with `css_lcp` active. It uses
 OD's native onLCP callback for the final candidate, without a whole-DOM scan, and
@@ -151,7 +183,11 @@ WordPress post's `_faaaster_image_pending` metadata until the existing purge
 queue confirms Nginx and any targeted managed Cloudflare purge. The successful
 purge timestamp is written after confirmation. A shared-volume lock per WP
 blog/post serializes metadata read-modify-write and acknowledgement; postmeta
-cache is refreshed after lock acquisition.
+cache is refreshed after lock acquisition. The lock is held for postmeta I/O only:
+a purge claims its due entries (attempt persisted), releases the lock for the
+Nginx/Cloudflare transport, then settles on a fresh read. A decision stored during
+transport keeps its own pending entry. A lock or postmeta error in the store path is
+logged and never turns the stored sample into a REST error.
 
 The existing `od_trigger_page_cache_invalidation` cron coalesces work over ten
 minutes. At most **five attempts per decision** are allowed, separated by at

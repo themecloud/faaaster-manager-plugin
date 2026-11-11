@@ -269,20 +269,23 @@ $pending = fresh_meta(50, FaaasterImagePurges::PENDING);
 check_purge('concurrent stale writers preserve both URLs', count($pending), 2);
 check_purge('both metric IDs retained', isset($pending[20], $pending[21]));
 
-// Hold an actual flock inside HTTP, then start a writer with a stale pending map.
+// HTTP runs outside the post lock: a store request (anonymous REST) completes while a purge
+// is in flight, and its new decision survives the acknowledgement of the older one.
 FaaasterImagePurges::stored(purge_context(30, 60));
 $flush = start_worker('flush-hold', 60, 30, 'flush-a');
 file_put_contents($directory . '/go-flush-a', '1');
 wait_file($directory . '/in-http-flush-a');
+// A nonblocking probe proves the other PHP process does not hold the lock during transport.
+$probe = fopen($lock_directory . '/.purges-1-60.lock', 'c');
+check_purge('purge lock released during transport', flock($probe, LOCK_EX | LOCK_NB), true);
+flock($probe, LOCK_UN);
+fclose($probe);
 $writer = start_worker('store', 60, 30, 'new-decision');
 file_put_contents($directory . '/go-new-decision', '1');
-// A nonblocking probe proves the lock is held by the other PHP process during transport.
-$probe = fopen($lock_directory . '/.purges-1-60.lock', 'c');
-check_purge('purge lock held until transport and acknowledgement finish', flock($probe, LOCK_EX | LOCK_NB), false);
-fclose($probe);
+finish_worker($writer);
+check_purge('store completes while the purge is in flight', isset(fresh_meta(60, FaaasterImagePurges::PENDING)[30]));
 file_put_contents($directory . '/release-flush-a', '1');
 finish_worker($flush);
-finish_worker($writer);
 check_purge('decision arriving during HTTP survives acknowledgement', isset(fresh_meta(60, FaaasterImagePurges::PENDING)[30]));
 check_purge('new decision fingerprint survives', fresh_meta(30, FaaasterImagePurges::META), FaaasterImagePurges::fingerprint(new ImagePurgeCollection('new-decision')));
 $t = purge_queue(false);

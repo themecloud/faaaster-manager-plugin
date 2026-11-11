@@ -14,6 +14,12 @@ class FaaasterImageOptimization
     const CSS_LCP_VERSION = 1;
     const FEATURES = array('css_lcp', 'inline_bg', 'lazy', 'srcset', 'style_bg');
     const CSS_LCP_REASONS = array('target_not_found', 'target_not_unique', 'source_not_in_style', 'csp');
+    const STORE_ROUTE = '/optimization-detective/v1/url-metrics:store';
+    // OD stores up to 1 MiB per URL Metric, 12 per URL. A real metric stays far below this bound,
+    // which also caps what an anonymous request may make PHP decompress and parse.
+    const MAX_METRIC_BYTES = 262144;
+    // Anonymous submissions can reach any URL with public query vars: bound the posts they create.
+    const MAX_URL_METRICS_POSTS = 2000;
     private static $booted = false;
     private static $status = 'disabled';
     private static $reason = 'disabled';
@@ -118,6 +124,8 @@ class FaaasterImageOptimization
         if (self::is_cli()) {
             self::$status = 'pending';
             self::$reason = 'cli_request';
+            // `wp cron event run` would otherwise consume a scheduled image purge without a handler.
+            add_action('od_trigger_page_cache_invalidation', array(__CLASS__, 'defer_cli_invalidation'), 1);
             return;
         }
         if (!self::enabled()) {
@@ -168,32 +176,39 @@ class FaaasterImageOptimization
         );
         if (!self::versions_compatible(self::$versions['optimization_detective'], self::$versions['image_prioritizer'])
             || !class_exists('OD_Tag_Visitor_Registry') || !class_exists('WP_HTML_Tag_Processor')) {
+            // The client's own copies won the upstream selection: they keep their native behavior.
             self::suspend('plugin_versions');
             return;
         }
+        // From here the embedded copies are the effective ones: a suspension must silence them
+        // (see halt()), and their anonymous store route is guarded whatever the status.
+        add_filter('rest_pre_dispatch', array(__CLASS__, 'pre_dispatch_metric_store'), 5, 3);
+        add_filter('rest_request_before_callbacks', array(__CLASS__, 'guard_metric_store'), 5, 3);
+        add_filter('od_maximum_url_metric_size', array(__CLASS__, 'maximum_metric_size'));
+        // OD replays save_post/clean_post_cache 10 minutes after each sample: never on Faaaster.
+        remove_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions');
         if (!faaaster_cache()) {
-            self::suspend('cache_module_unavailable');
+            self::halt('cache_module_unavailable');
             return;
         }
         require_once __DIR__ . '/sources.php';
         require_once __DIR__ . '/backgrounds.php';
         require_once __DIR__ . '/visitor.php';
         require_once __DIR__ . '/purges.php';
-        self::$sources = new FaaasterImageSources(wp_upload_dir(null, false));
-        if (!self::$sources->available()) {
-            self::suspend('uploads_location');
-            return;
-        }
         // Keep ownership of already scheduled purges even when new REST samples are unavailable.
         add_action('od_url_metric_stored', array('FaaasterImagePurges', 'stored'));
-        remove_action('od_trigger_page_cache_invalidation', 'od_trigger_post_update_actions');
         add_action('od_trigger_page_cache_invalidation', array('FaaasterImagePurges', 'flush'));
+        self::$sources = new FaaasterImageSources(wp_upload_dir(null, false));
+        if (!self::$sources->available()) {
+            self::halt('uploads_location');
+            return;
+        }
         if (1 === (int) get_option('od_rest_api_unavailable', '0')) {
-            self::suspend('od_rest_api_unavailable');
+            self::halt('od_rest_api_unavailable');
             return;
         }
         if (!self::publish_manifest()) {
-            self::suspend('manifest_unwritable_or_invalid');
+            self::halt('manifest_unwritable_or_invalid');
             return;
         }
         self::$status = 'active';
@@ -265,22 +280,104 @@ class FaaasterImageOptimization
     /** Stamp only OD submissions from HTML produced with the effective parser revision. */
     public static function stamp_metric_revision($response, $handler, $request)
     {
-        if ($response !== null || $request->get_method() !== 'POST'
-            || $request->get_route() !== '/optimization-detective/v1/url-metrics:store') {
+        if ($response !== null || !self::is_store_request($request)) {
             return $response;
         }
-        $data = $request->get_json_params();
-        if (!is_array($data)) { return $response; }
+        if (!is_array($request->get_json_params())) { return $response; }
         $query = $request->get_query_params();
         $revision = isset($query['faaaster_parser_revision']) ? $query['faaaster_parser_revision'] : null;
+        // Edit the validated and sanitized JSON parameters in place: re-encoding the body would make
+        // WordPress parse it again and hand OD the raw, unsanitized values.
         if ((is_string($revision) || is_int($revision)) && (string) $revision === (string) self::parser_revision()) {
-            $data[self::PARSER_METRIC_PROPERTY] = self::parser_revision();
+            $request->set_param(self::PARSER_METRIC_PROPERTY, self::parser_revision());
         } else {
             // Do not trust a marker carried in an old HTML page's JSON payload.
-            unset($data[self::PARSER_METRIC_PROPERTY]);
+            unset($request[self::PARSER_METRIC_PROPERTY]);
         }
-        $request->set_body(wp_json_encode($data, JSON_UNESCAPED_SLASHES));
         return $response;
+    }
+
+    public static function is_store_request($request)
+    {
+        return $request->get_method() === 'POST' && $request->get_route() === self::STORE_ROUTE;
+    }
+
+    public static function maximum_metric_size($size)
+    {
+        return min((int) $size, self::MAX_METRIC_BYTES);
+    }
+
+    /**
+     * Before WordPress parses or validates anything (and before OD's own unbounded gzdecode):
+     * refuse a submission while suspended or IP-locked, and bound the decompressed body. An empty
+     * body (OD's REST availability check) keeps the native validation answer.
+     */
+    public static function pre_dispatch_metric_store($result, $server, $request)
+    {
+        if ($result !== null || !self::is_store_request($request)) {
+            return $result;
+        }
+        $body = $request->get_body();
+        if (!is_string($body) || $body === '') {
+            return $result;
+        }
+        if (self::$status !== 'active') {
+            return self::store_refused();
+        }
+        if (class_exists('OD_Storage_Lock') && OD_Storage_Lock::is_locked()) {
+            return new WP_Error('url_metric_storage_locked', 'URL Metric storage is presently locked for the current IP.', array('status' => 423));
+        }
+        if ('gzip' === strtolower((string) $request->get_header('Content-Encoding'))) {
+            // Same compressed bound as OD (navigator.sendBeacon limit).
+            if (strlen($body) > 64 * 1024 || !function_exists('gzdecode')) {
+                return self::store_too_large();
+            }
+            $decoded = @gzdecode($body, self::MAX_METRIC_BYTES + 1);
+            if (!is_string($decoded) || strlen($decoded) > self::MAX_METRIC_BYTES) {
+                return self::store_too_large();
+            }
+            // OD's decompression filter (priority 10) sees no Content-Encoding any more.
+            $request->set_body($decoded);
+            $request->remove_header('Content-Encoding');
+        } elseif (strlen($body) > self::MAX_METRIC_BYTES) {
+            return self::store_too_large();
+        }
+        return $result;
+    }
+
+    /**
+     * After validation, before OD's callback. A validation error (OD's REST availability check
+     * expects rest_missing_callback_param) passes through untouched.
+     */
+    public static function guard_metric_store($response, $handler, $request)
+    {
+        if ($response !== null || !self::is_store_request($request)) {
+            return $response;
+        }
+        if (self::$status !== 'active') {
+            return self::store_refused();
+        }
+        $slug = $request->get_param('slug');
+        if (class_exists('OD_URL_Metrics_Post_Type') && is_string($slug) && !OD_URL_Metrics_Post_Type::get_post($slug)) {
+            $total = 0;
+            foreach ((array) wp_count_posts(OD_URL_Metrics_Post_Type::SLUG) as $count) {
+                $total += (int) $count;
+            }
+            if ($total >= (int) apply_filters('faaaster_image_optimization_max_url_metrics_posts', self::MAX_URL_METRICS_POSTS)) {
+                return new WP_Error('faaaster_url_metrics_quota', 'URL Metrics storage quota reached for this site.', array('status' => 507));
+            }
+        }
+        return $response;
+    }
+
+    private static function store_refused()
+    {
+        return new WP_Error('faaaster_image_optimization_inactive', 'Image optimization is not active on this site.', array('status' => 503));
+    }
+
+    private static function store_too_large()
+    {
+        return new WP_Error('rest_content_too_large', sprintf('URL Metric payloads are limited to %d bytes.', self::MAX_METRIC_BYTES), array('status' => 413));
     }
 
     /** A decision-only view; never remove stored samples during parser migration. */
@@ -365,6 +462,15 @@ class FaaasterImageOptimization
             return false;
         }
         $path = self::manifest_path();
+        // Every PHP request lands here: a manifest that already lists the current widths needs
+        // neither the lock nor a write (one small read, as the Nginx reader does).
+        $current = is_file($path) ? @file_get_contents($path, false, null, 0, 65537) : false;
+        if (is_string($current) && strlen($current) <= 65536) {
+            $published = self::manifest_widths(json_decode($current, true));
+            if ($published !== null && !array_diff(self::$sources->widths(), $published)) {
+                return true;
+            }
+        }
         $directory = dirname($path);
         if ((!is_dir($directory) && !wp_mkdir_p($directory)) || !is_writable($directory)) {
             return false;
@@ -384,6 +490,24 @@ class FaaasterImageOptimization
         }
     }
 
+    /** Widths of a decoded manifest, or null if it does not follow the contract. */
+    private static function manifest_widths($decoded)
+    {
+        if (!is_array($decoded) || !isset($decoded['contract'], $decoded['widths'], $decoded['format'], $decoded['quality'])
+            || $decoded['contract'] !== 'faaaster-images-v1' || $decoded['format'] !== 'webp'
+            || $decoded['quality'] !== 80 || !isset($decoded['source_prefix'], $decoded['width_zero'])
+            || $decoded['source_prefix'] !== '/wp-content/uploads/' || $decoded['width_zero'] !== 'no-resize'
+            || !is_array($decoded['widths']) || array_values($decoded['widths']) !== $decoded['widths']) {
+            return null;
+        }
+        foreach ($decoded['widths'] as $width) {
+            if (!is_int($width) || $width < 1 || $width > 2560) {
+                return null;
+            }
+        }
+        return $decoded['widths'];
+    }
+
     private static function write_manifest($path)
     {
         if (is_file($path) && !is_readable($path)) {
@@ -395,20 +519,11 @@ class FaaasterImageOptimization
             return false;
         }
         if ($old !== null) {
-            $decoded = json_decode($old, true);
-            if (!is_array($decoded) || !isset($decoded['contract'], $decoded['widths'], $decoded['format'], $decoded['quality'])
-                || $decoded['contract'] !== 'faaaster-images-v1' || $decoded['format'] !== 'webp'
-                || $decoded['quality'] !== 80 || !isset($decoded['source_prefix'], $decoded['width_zero'])
-                || $decoded['source_prefix'] !== '/wp-content/uploads/' || $decoded['width_zero'] !== 'no-resize'
-                || !is_array($decoded['widths']) || array_values($decoded['widths']) !== $decoded['widths']) {
+            $published = self::manifest_widths(json_decode($old, true));
+            if ($published === null) {
                 return false;
             }
-            foreach ($decoded['widths'] as $width) {
-                if (!is_int($width) || $width < 1 || $width > 2560) {
-                    return false;
-                }
-                $widths[] = $width;
-            }
+            $widths = array_merge($widths, $published);
         }
         $widths = array_values(array_unique($widths));
         sort($widths, SORT_NUMERIC);
@@ -470,6 +585,36 @@ class FaaasterImageOptimization
         self::observe();
     }
 
+    /**
+     * Suspension once the embedded OD/IP are loaded: they would otherwise keep buffering and
+     * rewriting pages (preloads, fetchpriority, lazy loading) on a site reported as suspended.
+     * Their store route answers 503 (guard_metric_store) and OD's save_post replay is removed.
+     */
+    private static function halt($reason)
+    {
+        add_filter('od_can_optimize_response', array(__CLASS__, 'never_optimize'), PHP_INT_MAX);
+        self::suspend($reason);
+    }
+
+    public static function never_optimize()
+    {
+        return false;
+    }
+
+    /** CLI cron: reschedule a pending image purge for the next HTTP cron run instead of dropping it. */
+    public static function defer_cli_invalidation($post_id)
+    {
+        $post_id = (int) $post_id;
+        $pending = $post_id > 0 ? get_post_meta($post_id, '_faaaster_image_pending', true) : null;
+        if (!is_array($pending) || !$pending) {
+            return;
+        }
+        $args = array($post_id);
+        if (!wp_next_scheduled('od_trigger_page_cache_invalidation', $args)) {
+            wp_schedule_single_event(time() + 600, 'od_trigger_page_cache_invalidation', $args);
+        }
+    }
+
     private static function observe()
     {
         if (self::is_cli()) {
@@ -490,12 +635,18 @@ class FaaasterImageOptimization
         }
         $changed = $comparable !== $state;
         if ($changed || $missing_features) {
-            $state['observed_at'] = time();
-            update_option(self::RUNTIME_OPTION, $state, false);
             // A version installed after activation must invalidate rewritten pages as well.
             if ($changed && faaaster_cache()) {
-                faaaster_cache()->queue()->enqueue_all('image-optimization:' . self::$status);
+                $queue = faaaster_cache()->queue();
+                $queue->enqueue_all('image-optimization:' . self::$status);
+                if (!$queue->all_pending()) {
+                    // Throttled by the purge-all storm guard: keep the previous observation so a
+                    // later request purges (activation and deactivation alike).
+                    return;
+                }
             }
+            $state['observed_at'] = time();
+            update_option(self::RUNTIME_OPTION, $state, false);
         }
     }
 
