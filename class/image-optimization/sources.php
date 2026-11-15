@@ -229,7 +229,6 @@ class FaaasterImageSources
                 return $this->url($candidate['source']) . ' ' . $candidate['descriptor'];
             }, $candidates));
         }
-        $largest = $source;
         $out = array();
         foreach ($candidates as $candidate) {
             $item = $candidate['source'];
@@ -251,24 +250,30 @@ class FaaasterImageSources
             ksort($existing, SORT_NUMERIC);
             return implode(', ', $existing);
         }
+        // Every file here has the src ratio (checked above): the sizes WordPress made of one image.
+        $natives = array($source['width'] => $source);
         foreach ($candidates as $candidate) {
-            $item = $candidate['source'];
-            // Existing native candidates retain their own crop/source.
-            $out[$item['width']] = $this->url($item) . ' ' . $item['width'] . 'w';
-            if (abs($item['height'] - $item['width'] * $source['height'] / $source['width']) <= 1 && $item['width'] > $largest['width']) {
-                $largest = $item;
-            }
+            $natives[$candidate['source']['width']] = $candidate['source'];
+        }
+        ksort($natives, SORT_NUMERIC);
+        foreach ($natives as $width => $item) {
+            // Existing native candidates retain their own crop/source, at their natural width
+            // (w0 has no bucket limit: a full size above 2560 stays available).
+            $out[$width] = $this->url($item) . ' ' . $width . 'w';
         }
         foreach ($this->widths as $width) {
-            if ($width <= $largest['width'] && !isset($out[$width])) {
-                $out[$width] = $this->url($largest, $width) . ' ' . $width . 'w';
+            if (isset($out[$width])) {
+                continue;
+            }
+            // Resized from the narrowest file that covers the bucket, not from the full size: when the
+            // image service does not answer in time the site serves the file named here, unresized.
+            foreach ($natives as $native_width => $item) {
+                if ($native_width > $width) {
+                    $out[$width] = $this->url($item, $width) . ' ' . $width . 'w';
+                    break;
+                }
             }
         }
-        if (!isset($out[$source['width']])) {
-            $out[$source['width']] = $this->url($source) . ' ' . $source['width'] . 'w';
-        }
-        // Full-size conversion remains available even when larger than the largest resize bucket.
-        $out[$largest['width']] = $this->url($largest) . ' ' . $largest['width'] . 'w';
         ksort($out, SORT_NUMERIC);
         return implode(', ', $out);
     }
