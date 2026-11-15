@@ -15,7 +15,8 @@ export function initialize({ onLCP, extendRootData }) {
             const source = new URL(entry.url, location.href);
             if ((id === null || id.length <= 100) && (classes === null || classes.length <= 500)
                 && source.origin === location.origin && !source.search && !source.hash
-                && /^\/_faaaster\/images\/v1\/webp\/q80\/w(?:0|[1-9][0-9]{0,3})\/m[1-9][0-9]{0,11}-s[1-9][0-9]{0,11}\/wp-content\/uploads\//.test(source.pathname)
+                // A variant we already emitted, or the original file a stylesheet still names.
+                && /^(?:\/_faaaster\/images\/v1\/webp\/q80\/w(?:0|[1-9][0-9]{0,3})\/m[1-9][0-9]{0,11}-s[1-9][0-9]{0,11})?\/wp-content\/uploads\/./.test(source.pathname)
                 && getComputedStyle(element).backgroundImage.includes('url("' + source.href + '")')) {
                 const rect = element.getBoundingClientRect();
                 if (Number.isFinite(rect.width) && Number.isFinite(rect.height) && rect.width > 0 && rect.height > 0) {

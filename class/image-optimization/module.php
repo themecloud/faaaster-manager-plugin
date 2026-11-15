@@ -11,7 +11,7 @@ class FaaasterImageOptimization
     const REWRITER = 'faaaster/image-urls-v2';
     const DETECTION_FAILURES_OPTION = 'faaaster_image_detection_failures';
     const PARSER_METRIC_PROPERTY = 'faaasterParserRevision';
-    const CSS_LCP_VERSION = 1;
+    const CSS_LCP_VERSION = 2;
     const FEATURES = array('css_lcp', 'inline_bg', 'lazy', 'srcset', 'style_bg');
     const CSS_LCP_REASONS = array('target_not_found', 'target_not_unique', 'source_not_in_style', 'csp');
     const STORE_ROUTE = '/optimization-detective/v1/url-metrics:store';

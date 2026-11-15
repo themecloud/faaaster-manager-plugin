@@ -246,7 +246,8 @@ def main():
                         return
                 self.send_response(200)
                 # The test simulates image delivery; production encoding is covered by the shared-service tests.
-                self.send_header('Content-Type', 'image/png')
+                # A page builder's generated stylesheet lives under uploads too.
+                self.send_header('Content-Type', 'text/css' if path.endswith('.css') else 'image/png')
                 self.send_header('Content-Length', str(file.stat().st_size))
                 self.end_headers()
                 self.wfile.write(file.read_bytes())
@@ -277,7 +278,7 @@ def main():
                     cases.extend(((name, 1, 390), (name, 3, 390)))
                 elif fixture.get('mobile'):
                     cases.extend((name, dpr, width) for dpr in (1, 2) for width in (400, 1280))
-                elif name == 'css-lcp':
+                elif name in ('css-lcp', 'css-lcp-external'):
                     cases.extend((name, dpr, 1280) for dpr in (1, 1.5, 2))
                 else:
                     cases.append((name, 2, 1280))
@@ -298,7 +299,8 @@ def main():
                 finally:
                     chrome.close()
                 with request_lock:
-                    assets = [p for p in requests if '/wp-content/uploads/' in p]
+                    assets = [p for p in requests if '/wp-content/uploads/' in p and not p.endswith('.css')]
+                    sheets = [p for p in requests if p.endswith('.css') and '/wp-content/uploads/' in p]
                     assert not failures, (name, failures)
                 assert assets, (name, 'no image requested', observed)
                 assert len(assets) == len(set(assets)), (name, 'duplicate image downloads', assets)
@@ -312,7 +314,12 @@ def main():
                     native = metrics[0].get('lcpElementExternalBackgroundImage')
                     assert geometry and native and geometry['url'] == native['url'], metrics
                     assert geometry['width'] == 400 and geometry['height'] == 200, geometry
-                    assert len(assets) == 1 and '/w0/' in assets[0], assets
+                    if data['fixtures'][name].get('original'):
+                        # Declared by a stylesheet file: the original is what a cold page shows and measures.
+                        assert sheets and assets == ['/wp-content/uploads/2026/11/large.png'], (sheets, assets)
+                        assert geometry['url'].endswith('/wp-content/uploads/2026/11/large.png'), geometry
+                    else:
+                        assert len(assets) == 1 and '/w0/' in assets[0], assets
                 elif data['fixtures'][name].get('css_lcp'):
                     expected = {1:480, 1.5:768, 2:960}.get(dpr)
                     if data['fixtures'][name].get('cover'):
@@ -321,6 +328,9 @@ def main():
                         expected = 320 if dpr == 1 else 0
                         assert 'small.png' in observed['background'], observed
                     assert f'/w{expected}/' in observed['background'], observed
+                    if data['fixtures'][name].get('external'):
+                        # The stylesheet file was applied, and the rule copied into the page won over it.
+                        assert sheets, ('stylesheet not requested', requests)
                     if data['fixtures'][name].get('shared'):
                         assert len(assets) == 2, (name, assets)
                         assert len(observed['others']) == 2 and all('/w0/' in bg for bg in observed['others']), observed

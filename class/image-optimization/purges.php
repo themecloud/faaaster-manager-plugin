@@ -22,7 +22,14 @@ class FaaasterImagePurges
             $external = $lcp ? $lcp->get_url_metric()->get('lcpElementExternalBackgroundImage') : null;
             if (is_array($external) && isset($external['url'])) {
                 $source_key = FaaasterImageSources::variant_key($external['url']);
-                if ($source_key) { $external['url'] = $source_key; }
+                $path = FaaasterImageSources::upload_path($external['url']);
+                if ($path !== null && ($source_key === null || (is_array($dimensions) && isset($dimensions['CSS:' . $path])))) {
+                    // A background of a stylesheet file: one identity before and after its rule is
+                    // copied into the page, whatever classes a script gives its element meanwhile.
+                    $external = array('url' => $path);
+                } elseif ($source_key) {
+                    $external['url'] = $source_key;
+                }
             }
             $groups[] = array($group->get_minimum_viewport_width(), $group->get_maximum_viewport_width(),
                 $lcp ? $lcp->get_xpath() : null,

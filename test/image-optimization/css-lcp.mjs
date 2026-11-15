@@ -31,7 +31,10 @@ assert.equal(results.at(-1).faaasterCssLcp, null);
 for (const make of [
     () => ({ url: '', element: new HTMLElement() }),
     () => ({ url: 'https://other.test/' + url.split('client.test/')[1], element: new HTMLElement() }),
-    () => ({ url: 'https://client.test/wp-content/uploads/hero.png', element: new HTMLElement() }),
+    () => ({ url: 'https://client.test/wp-content/themes/hero.png', element: new HTMLElement() }),
+    () => ({ url: 'https://client.test/_faaaster/images/v1/webp/q80/w0/m123-s456/wp-content/themes/hero.png', element: new HTMLElement() }),
+    () => ({ url: 'https://client.test/x/wp-content/uploads/hero.png', element: new HTMLElement() }),
+    () => ({ url: 'https://client.test/wp-content/uploads/hero.png?v=1', element: new HTMLElement() }),
     () => ({ url: url + '?variant=1', element: new HTMLElement() }),
     () => ({ url, element: Object.assign(new HTMLElement(), { style: { backgroundImage: 'url("' + url + '")' } }) }),
     () => ({ url, element: Object.assign(new HTMLElement(), { computed: 'none' }) }),
@@ -42,7 +45,12 @@ for (const make of [
     callback({ entries: [make()] });
     assert.equal(results.at(-1).faaasterCssLcp, null);
 }
+// A stylesheet file still naming the original upload is measured too (its rule is adapted in the page).
+const original = 'https://client.test/wp-content/uploads/2026/11/hero.png';
+const styled = Object.assign(new HTMLElement(), { computed: 'url("' + original + '")' });
+callback({ entries: [{ url: original, element: styled }] });
+assert.deepEqual(results.at(-1), { faaasterCssLcp: { url: original, width: 390, height: 844 } });
 callback({ entries: [{ url, element }, { url: '', element }] });
 assert.equal(results.at(-1).faaasterCssLcp, null, 'only the final entry is recorded');
 assert.equal(element.reads, 1, 'no geometry read for skipped candidates');
-console.log('OK CSS LCP collector: dimensions, final candidate, origin, inline/pseudo exclusions, no DOM scan');
+console.log('OK CSS LCP collector: dimensions, final candidate, origin, original and variant paths, inline/pseudo exclusions, no DOM scan');

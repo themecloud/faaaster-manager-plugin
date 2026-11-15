@@ -91,5 +91,5 @@ $browser_fixtures['css-lcp-cover'] = array('html' => str_replace('</head>', $css
 
 // The actual detector must discover CSS geometry on a cold page using our module.
 $native_css = od_optimize_template_output_buffer($css_document);
-check('CSS geometry collector is registered in native OD arguments', strpos($native_css, '/assets/image-css-lcp.js?ver=1') !== false);
+check('CSS geometry collector is registered in native OD arguments', strpos($native_css, '/assets/image-css-lcp.js?ver=' . FaaasterImageOptimization::CSS_LCP_VERSION) !== false);
 $browser_fixtures['css-lcp-collect'] = array('html' => $native_css, 'link' => null, 'css_collect' => true);

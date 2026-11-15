@@ -627,6 +627,7 @@ check('pending change eventually purged', count(faaaster_cache()->queue()->urls)
 require __DIR__ . '/backgrounds.php';
 require __DIR__ . '/v015.php';
 require __DIR__ . '/css-lcp.php';
+require __DIR__ . '/css-external.php';
 require __DIR__ . '/features.php';
 
 $export = getenv('IMAGE_TEST_EXPORT');
