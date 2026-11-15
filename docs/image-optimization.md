@@ -2,9 +2,9 @@
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
-plugin to install. OD has the declared backports revision 1 (parser/injection) and
-revision 2 (no stored URL Metrics printed under WP_DEBUG); IP and compiled upstream
-assets remain unchanged. Archive origins, upstream/patched
+plugin to install. OD has the declared backports revision 1 (parser/injection),
+revision 2 (no stored URL Metrics printed under WP_DEBUG) and revision 3 (no diagnostic
+attributes written into pages); IP and compiled upstream assets remain unchanged. Archive origins, upstream/patched
 SHA-256 hashes and the reproducible patch are pinned in
 `vendor/image-optimization/manifest.json` and `patches/README.md` alongside it.
 
@@ -49,7 +49,7 @@ Locally, OD's walk plus the visitors went from 70 ms to 27 ms on that page (bare
 the measurement.
 
 Release 0.16.0 changes which srcset candidates are added and from which file, without
-changing the URL contract, `widths.json`, the embedded upstream copies or their patches.
+changing the URL contract or `widths.json`.
 Measured on the first customer site (www.stephaneolivier.fr, 15/11/2026, photo `IMG_4359`,
 1920 × 2560): each added bucket was resized from the largest file of the set (`w640` of
 `IMG_4359-scaled.jpeg`, 1,048 KB) although WordPress had made `-768x1024.jpeg` (187 KB), so
@@ -92,6 +92,17 @@ viewport group. The collector module is at version 2 (it also measures an origin
 address), which changes OD's ETag: pages are measured again, none is purged by the upgrade.
 Not covered: the other slides of a slideshow (not the main image), and a full-size WebP
 heavier than the file served today (751 against 643 KB for that slide on a wide 2x screen).
+
+Release 0.16.0 finally stops writing OD's diagnostic attributes into pages (OD backport
+revision 3). Upstream copies every attribute it changes into a `data-od-*` twin, so each
+image whose `srcset` is rewritten carried its whole former `srcset` a second time
+(`data-od-replaced-srcset`), next to `data-od-replaced-sizes`, `data-od-added-*`,
+`data-od-removed-*` and IP's `data-od-unknown-tag`. Nothing reads them. On the
+www.stephaneolivier.fr home page that was 424 attributes, 64.8 KB of 577 KB of HTML (11 %;
+56.1 → 53.1 KB compressed); 5 KB on www.faaaster.io. They are now written only when the
+filter `faaaster_od_meta_attributes` returns true. `data-od-xpath`, which the detection
+script needs while a page is being measured, is unchanged. No purge is needed: a cached
+page keeps them until it is next generated.
 
 ## Activation and prerequisites
 
@@ -346,7 +357,7 @@ The image suite uses the real WordPress 6.9 parser, declared OD backports and un
 tests use the real queue, simulated HTTP and multiple PHP processes against
 shared file-backed metadata; they do not contact production. CI covers PHP
 7.4, 8.2, 8.4 and 8.5. Release validation runs the full PHP lint and suites on
-PHP 7.4.33 (1,286 active-path, 63 purge, 37 counter, 63 REST-metric and 528 cache
+PHP 7.4.33 (1,303 active-path, 63 purge, 37 counter, 63 REST-metric and 528 cache
 checks), collector syntax/unit tests and 84 local Chrome scenarios; deployment and activation require a separate authorized operation.
 The browser suite requires Python >= 3.9 and Chrome/Chromium. It serves local
 fixtures with actual OD preload tags/headers and checks variant selection,

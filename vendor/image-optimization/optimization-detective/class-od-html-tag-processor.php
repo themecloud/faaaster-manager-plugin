@@ -26,6 +26,8 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 	private bool $ambiguous_structure = false;
 	private array $seen_document_tags = array();
 	private string $verified_body_markup = '';
+	/** Faaaster backport, revision 3: whether diagnostic meta attributes are written (asked once per document). */
+	private ?bool $faaaster_meta_attributes = null;
 
 	/**
 	 * Raw text tags.
@@ -562,6 +564,20 @@ final class OD_HTML_Tag_Processor extends WP_HTML_Tag_Processor {
 	 * @return bool Whether an attribute was set.
 	 */
 	public function set_meta_attribute( string $name, $value ): bool {
+		/*
+		 * Faaaster backport, revision 3: upstream records every attribute it changes in a data-od-* attribute,
+		 * among them the whole former srcset of each rewritten image (62 KB of a 577 KB production page, kept
+		 * in the page cache and downloaded by every visitor). Only "xpath" is read, by the detection script.
+		 * The others are diagnostics: they are now written on explicit request only.
+		 */
+		if ( 'xpath' !== $name ) {
+			if ( null === $this->faaaster_meta_attributes ) {
+				$this->faaaster_meta_attributes = (bool) apply_filters( 'faaaster_od_meta_attributes', false );
+			}
+			if ( ! $this->faaaster_meta_attributes ) {
+				return false;
+			}
+		}
 		return parent::set_attribute( "data-od-{$name}", $value );
 	}
 
