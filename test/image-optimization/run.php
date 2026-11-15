@@ -410,18 +410,34 @@ foreach ($photo as $w => $url) {
     check('native ' . $w . 'w keeps its own file unresized', $photo_set[$w], $resolver->url($resolver->resolve($url)));
 }
 // Each resized candidate names the narrowest WordPress size that covers it, with that file's version.
-foreach (array(320 => 375, 480 => 768, 640 => 768, 960 => 1024, 1280 => 1320, 1600 => 1920) as $bucket => $base) {
+foreach (array(150 => 375, 480 => 768, 640 => 768, 777 => 1024, 1600 => 1920) as $bucket => $base) {
     check('w' . $bucket . ' resized from the ' . $base . ' px file', $photo_set[$bucket], $resolver->url($resolver->resolve($photo[$base]), $bucket));
 }
+// No bucket where a candidate less than 20 % wider exists: 320 (375), 960 (1024), 1280 (1320).
+// 1600 stays (1920 is exactly 20 % wider), and so do the registered widths nothing covers (150, 777).
+check('no bucket under a file less than 20 % wider', array_keys($photo_set), array(64, 150, 375, 400, 480, 640, 768, 777, 1024, 1152, 1320, 1536, 1600, 1920));
 $from_full = 0;
 foreach ($photo_set as $entry_url) { $from_full += strpos($entry_url, 'photo-scaled.png') !== false; }
 check('full size only named where no smaller file covers', $from_full, 2); // its own w0 and w1600
 check('no candidate enlarges its file', (bool) preg_match('~/w(?:1920|2560)/~', implode(' ', $photo_set)), false);
+$set_widths = function ($srcset) {
+    preg_match_all('~ ([0-9]+)w(?:,|$)~', $srcset, $found);
+    return array_map('intval', $found[1]);
+};
+// Two close buckets (768 and the registered 777, 960 and the registered 1024): the wider one stays
+// and covers the other. Exactly 20 % wider is far enough (1024/1280).
+check('close buckets keep the wider one', $set_widths($candidate), array(150, 320, 400, 480, 640, 777, 1024, 1280, 1600));
+check('bucket covered by a close one is not added', (bool) preg_match('~/w(?:768|960|1536)/~', $candidate), false);
 // Without an authored set the src file is the only one known: buckets come from it.
 $alone = $resolver->srcset($resolver->resolve($photo[768]), array());
-check('single file feeds its own buckets', substr_count($alone, 'photo-768x1024.png'), substr_count($alone, 'w, ') + 1);
-check('single file bucket', strpos($alone, '/w640/') !== false && strpos($alone, '/w960/') === false);
-
+check('single file ladder', $set_widths($alone), array(150, 320, 480, 640, 768));
+check('single file feeds its own buckets', substr_count($alone, 'photo-768x1024.png'), 5);
+// A full size just above a bucket: no near-duplicate resize of it.
+check('no bucket just under the full size', $set_widths($resolver->srcset($resolver->resolve($photo[1320]), array())), array(150, 320, 480, 640, 777, 1024, 1320));
+// A bucket just above a file is kept: no candidate less than 20 % wider would cover that slot.
+$above = $resolver->srcset($photo_source, $resolver->candidates($photo[1536] . ' 1536w, ' . $photo[1920] . ' 1920w'));
+check('bucket just above a file is kept', $set_widths($above), array(150, 320, 480, 640, 777, 1024, 1280, 1536, 1600, 1920));
+check('each bucket from its narrowest covering file', substr_count($above, 'photo-1536x2048.png') === 8 && substr_count($above, 'photo-scaled.png') === 2);
 $percent = image_png(40, 20, 'literal% photo.png');
 check('literal percent source not signed by px2 stays original', $resolver->resolve($percent), null);
 $long_segment = str_repeat('é', 80);
@@ -534,6 +550,7 @@ $known = str_replace('<img ', '<img width="400" ', $unknown);
 list($known_output, $known_preloads) = transform_html($known);
 check('registered custom size adds responsive candidate', strpos($known_output, '/w777/') !== false);
 check('registered custom size carried into preload', strpos($known_preloads, '/w777/') !== false);
+check('bucket covered by a close one is not in the page', strpos($known_output, '/w768/') === false && strpos($known_preloads, '/w768/') === false);
 check('HTML width attribute retained', strpos($known_output, 'width="400"') !== false);
 check('known HTML width adds responsive candidates', strpos($known_output, '/w320/') !== false);
 check('known HTML width adds bounded sizes', strpos($known_output, 'sizes="(max-width: 400px) 100vw, 400px"') !== false);
