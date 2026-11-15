@@ -117,6 +117,28 @@ class FaaasterImageVisitor
         return false;
     }
 
+    /** Whether a visible policy could refuse a STYLE element added to the page without nonce or hash. */
+    public static function restricts_inline_styles(array $policies)
+    {
+        foreach ($policies as $policy) {
+            $directives = array();
+            foreach (explode(';', $policy) as $directive) {
+                $parts = preg_split('/\s+/', trim($directive), 2);
+                $name = strtolower($parts[0]);
+                if (!isset($directives[$name])) { $directives[$name] = isset($parts[1]) ? $parts[1] : ''; }
+            }
+            foreach (array('style-src-elem', 'style-src', 'default-src') as $name) {
+                if (isset($directives[$name])) {
+                    // A nonce or a hash makes the browser ignore 'unsafe-inline'.
+                    if (stripos($directives[$name], "'unsafe-inline'") === false
+                        || preg_match("/'(?:nonce|sha(?:256|384|512))-[^']+'/i", $directives[$name])) { return true; }
+                    break;
+                }
+            }
+        }
+        return false;
+    }
+
     private function scan_csp($processor, $context)
     {
         $policies = array();
@@ -125,29 +147,42 @@ class FaaasterImageVisitor
         }
         $groups = FaaasterImageOptimization::feature_enabled('css_lcp')
             ? FaaasterImageBackgrounds::css_lcp_groups($context->url_metric_group_collection) : array();
-        $targets = array(); $counts = array(); $styles = array();
+        $targets = array(); $counts = array(); $styles = array(); $links = array();
+        $measured = false;
         foreach ($groups as $candidate) {
-            if ($candidate !== null) { $targets[FaaasterImageBackgrounds::css_identity($candidate['target'])] = $candidate['target']; }
+            if ($candidate === null) { continue; }
+            $measured = true;
+            if ($candidate['target'] !== null) { $targets[FaaasterImageBackgrounds::css_identity($candidate['target'])] = $candidate['target']; }
         }
-        // Without CSS LCP targets this pre-walk only looks for a CSP META element: skip it when the
+        // Without a measured CSS LCP this pre-walk only looks for a CSP META element: skip it when the
         // page holds no "http-equiv" at all, and otherwise visit META elements only.
-        if ($targets || FaaasterImageOptimization::meta_policy_possible()) {
+        if ($measured || FaaasterImageOptimization::meta_policy_possible()) {
             $bookmark = 'faaaster-csp-scan';
             $processor->set_bookmark($bookmark);
-            $query = $targets ? array('tag_closers' => 'skip') : array('tag_name' => 'META', 'tag_closers' => 'skip');
+            $query = $measured ? array('tag_closers' => 'skip') : array('tag_name' => 'META', 'tag_closers' => 'skip');
             while ($processor->next_tag($query)) {
-                if (!$targets) {
+                if (!$measured) {
                     if (strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') !== 0) { continue; }
                     if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
                     $policies[] = (string) $processor->get_attribute('content');
                     continue;
                 }
                 if (in_array('NOSCRIPT', $processor->get_breadcrumbs(), true) || $processor->is_admin_bar()) { continue; }
-                if ($processor->get_tag() === 'STYLE' && method_exists($processor, 'get_modifiable_text')) { $styles[] = $processor->get_modifiable_text(); }
+                $tag = $processor->get_tag();
+                if ($tag === 'STYLE' && method_exists($processor, 'get_modifiable_text')) { $styles[] = $processor->get_modifiable_text(); }
+                if ($tag === 'LINK') {
+                    // Stylesheets applied to every medium, in page order; where each one sits decides
+                    // where a rule copied from it must be written to come after it.
+                    $rel = $processor->get_attribute('rel'); $href = $processor->get_attribute('href'); $media = $processor->get_attribute('media');
+                    if (is_string($rel) && is_string($href) && preg_match('/(?:^|\s)stylesheet(?:\s|$)/i', $rel) && !preg_match('/(?:^|\s)alternate(?:\s|$)/i', $rel)
+                        && $processor->get_attribute('disabled') === null && ($media === null || in_array(strtolower(trim((string) $media)), array('', 'all'), true))) {
+                        $links[] = array('href' => $href, 'body' => in_array('BODY', $processor->get_breadcrumbs(), true));
+                    }
+                }
                 foreach ($targets as $identity => $target) {
                     if (!self::js_loaded($processor) && FaaasterImageBackgrounds::matches_css_target($processor, $target)) { $counts[$identity] = ($counts[$identity] ?? 0) + 1; }
                 }
-                if ($processor->get_tag() === 'META' && strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') === 0) {
+                if ($tag === 'META' && strcasecmp((string) $processor->get_attribute('http-equiv'), 'Content-Security-Policy') === 0) {
                     $policies[] = (string) $processor->get_attribute('content');
                 }
             }
@@ -155,7 +190,7 @@ class FaaasterImageVisitor
             $processor->release_bookmark($bookmark);
         }
         $this->rewrite_styles = !self::has_style_hash_policy($policies);
-        if ($targets) { $this->backgrounds->prepare_css_lcp($context, $groups, $styles, $counts, $this->rewrite_styles); }
+        if ($measured) { $this->backgrounds->prepare_css_lcp($context, $groups, $styles, $counts, $this->rewrite_styles, $links, self::restricts_inline_styles($policies)); }
     }
 
     private function lazy_plan($processor)

@@ -73,8 +73,25 @@ service on `IMG_4359`: `w640` from the 768 px file weighs 108.7 KB against 112.5
 full size, `w480` 62.8 against 64.1 KB; PSNR against a Lanczos reduction of the full size is
 31.8 against 33.8 dB at 640 and 32.8 against 32.2 dB at 480 (no consistent loss). The source
 is a JPEG WordPress already recompressed, as the native candidates always were.
-Backgrounds are unchanged: CSS names a single file, the one the site served before
-activation, so their fallback never got heavier.
+The source file of background variants is unchanged: CSS names a single file, the one the
+site served before activation, so their fallback never got heavier.
+
+Release 0.16.0 also adapts the main image of a page when a **stylesheet file** declares it,
+which is where Elementor writes it (`wp-content/uploads/elementor/css/post-<id>.css`).
+Measured on 15/11/2026: on www.faaaster.io the banner is a 385 KB JPEG that the service
+delivers in 35 KB at full size and 19 KB at 960 px; on www.stephaneolivier.fr the first
+slide weighs 643 KB (310 KB at 1280 px, 180 KB at 960 px). Nothing reached them: the
+in-place path needs the source in a STYLE block and an element that its tag, id and class
+single out, while 4 elements share the class on the first site and 13 on the second.
+The rule that paints the image is now copied into the page, with its exact selector and
+at-rules and the variant as its only declaration; the stylesheet file is never written and
+the author's rule stays underneath (see "CSS backgrounds identified as LCP"). Replayed on
+the real stylesheets of both sites: 14 files / 321 KB read in 3.4 ms on the first, 6 files
+/ 93 KB in 1.3 ms on the second; 0.6 to 2.6 KB of CSS and 2 to 8 preload links added per
+viewport group. The collector module is at version 2 (it also measures an original upload
+address), which changes OD's ETag: pages are measured again, none is purged by the upgrade.
+Not covered: the other slides of a slideshow (not the main image), and a full-size WebP
+heavier than the file served today (751 against 643 KB for that slide on a wide 2x screen).
 
 ## Activation and prerequisites
 
@@ -182,7 +199,8 @@ parentheses): any quote, escape, comment, `;`, `{`, `}`, `!`, `@`, `:` or `<` le
 element exactly as authored. A generated STYLE is never emitted if it contains `</`. In STYLE blocks only background and
 background-image URLs are converted to w0; cursor URLs, custom properties and
 other declarations are preserved. Visible hash-based style CSP prevents STYLE
-rewriting; nonces are retained. External CSS files and video remain outside this lot.
+rewriting; nonces are retained. Stylesheet files are never rewritten (the LCP background of
+one may be adapted from the page, see below); video remains outside this lot.
 Without measurements, backgrounds use `w0`. Measured sizing uses the conservative
 cover extent `max(element.width, element.height * source.width / source.height)`
 per viewport group, rounded up to an admitted width and capped at the source width.
@@ -191,13 +209,43 @@ use its end variants. Identical adjacent viewport decisions share CSS rules.
 Critical-background preloads use the same variants/media conditions. Inline
 backgrounds retain IP's lazy loader, including authored `!important` styles.
 
-Only CSS backgrounds identified as LCP become adaptive: a viewport group needs
-complete sample agreement on the exact tag/id/class identity, URL and measured
-geometry. The target must be unique in the HTML and the source present in an
-eligible STYLE block. The same cover calculation and source/DPR buckets produce
-CSS variables and preloads inside the existing STYLE, retaining its nonce/media
-and leading imports. Missing/ambiguous data keeps w0. Other CSS backgrounds only
-receive w0 conversion; external stylesheet selectors are never evaluated by PHP.
+### CSS backgrounds identified as LCP
+
+Only CSS backgrounds identified as LCP become adaptive. A viewport group needs complete
+sample agreement on the uploads file (original or variant address alike) and a measured
+geometry. Two paths, both using the same cover calculation and source/DPR buckets:
+
+- **Source in a STYLE block of the page**: the samples must also agree on the exact
+  tag/id/class identity and on the variant address, and the target must be unique in the
+  HTML. CSS variables and preloads are produced inside the existing STYLE, retaining its
+  nonce/media and leading imports.
+- **Source in a stylesheet file linked by the page** (any other case): the rule is copied.
+  Read: `<link rel="stylesheet">` elements outside NOSCRIPT, without `disabled`, with no
+  `media` or `media="all"`, whose address resolves to a `.css` file inside the real uploads
+  directory (query ignored); at most 32 files, 512 KiB each, 2 MiB in all. If one of them
+  cannot be read within these bounds nothing is copied. The file must be named, as an
+  absolute or root-relative address, by exactly one background declaration of those files
+  and of the page's STYLE blocks. That declaration must hold a single image and nothing else
+  (`background-image: url(…)`, or a `background` shorthand without function or second
+  layer), in a plain style rule with at most three `@media`/`@supports` around it; its
+  selector and at-rules must contain no `<`, backslash, brace, comment, `&` or control
+  character; and no other background declaration, in any file or STYLE block, may share
+  one of its selectors (a responsive variant must keep winning where the author wrote it).
+  The copy is `<at-rules>{<selector>{background-image:url("<variant>")}}`, with the
+  author's `!important` when present, inside our viewport and resolution queries, in one
+  `<style data-faaaster-images="css-lcp">` appended to HEAD, or to BODY when the stylesheet
+  is linked there: same selector, same specificity, later in the page. No element is
+  marked and PHP evaluates no selector. A visible policy whose `style-src-elem`,
+  `style-src` or `default-src` lacks `'unsafe-inline'` (or carries a nonce or hash) prevents
+  the copy; a policy without such a directive does not.
+
+In any doubt nothing is written and the author's rule applies. If the service does not
+answer, the site serves the original under the variant address. The page cache module purges
+the page when its Elementor document is saved, and every page when a template is saved or
+the CSS regenerated, so a copy never outlives the rule it came from. Known limit: a plugin
+that moves the stylesheet after our STYLE makes the author's rule win again; the page is
+right but the preloaded variant is wasted. Missing/ambiguous data keeps w0 in STYLE blocks.
+Other CSS backgrounds only receive w0 conversion there.
 
 ## Measurements, scripts and page-cache purges
 
@@ -218,7 +266,8 @@ on the validated, sanitized parameters, without re-encoding the body. Gzipped me
 about 7.8 KB locally, excluding inline parameters and HTML metadata. The small
 `assets/image-css-lcp.js` extension is declared only with `css_lcp` active. It uses
 OD's native onLCP callback for the final candidate, without a whole-DOM scan, and
-submits same-origin background URL/geometry as `faaasterCssLcp`. Full
+submits same-origin background URL/geometry as `faaasterCssLcp`, for a variant address or
+an original `/wp-content/uploads/` one (collector version 2, part of OD's ETag data). Full
 collection completion removes the detector on the next HTML generation; cached
 HTML may keep it until regeneration. No server/browser CPU benchmark is claimed.
 
@@ -226,7 +275,9 @@ Source dimensions by XPath are stored as one snapshot per existing OD URL post i
 `_faaaster_image_background_sources`. The completed HTML traversal writes only
 when this snapshot changes, clears removed backgrounds, and creates no metadata
 for pages without eligible backgrounds. CSS LCP source dimensions share that
-snapshot under `CSS:<source variant key>`; no second per-page store is added. The first visit may not yet have an OD
+snapshot under `CSS:<source variant key>`, or `CSS:<uploads path>` for a rule copied from a
+stylesheet file (one identity before and after the copy, so samples turning from the
+original to the variant address request no purge); no second per-page store is added. The first visit may not yet have an OD
 post; dimensions are saved on a later generation after OD creates it. Measurement
 storage reads this snapshot without resolving image files or rewriting dimensions.
 
@@ -273,7 +324,8 @@ suspends rewriting while retaining ownership of already scheduled purges.
 `detection_injection_failures` counts necessary injections that failed to appear
 immediately before the closing BODY. `css_lcp_unmatched` counts valid viewport
 consensus groups that cannot adapt, by `target_not_found`, `target_not_unique`,
-`source_not_in_style` or `csp`; there is no URL list. Both use one atomic site/blog
+`source_not_in_style` (neither in a STYLE block nor copiable from a stylesheet file) or
+`csp`; there is no URL list. Both use one atomic site/blog
 snapshot `.detection-{blog_id}.json`, the existing shared lock and one shared SQL
 checkpoint attempt per minute at most. State includes the durable uncheckpointed
 tail. Legacy integer options/snapshots are readable; corrupt data reports null
@@ -294,8 +346,8 @@ The image suite uses the real WordPress 6.9 parser, declared OD backports and un
 tests use the real queue, simulated HTTP and multiple PHP processes against
 shared file-backed metadata; they do not contact production. CI covers PHP
 7.4, 8.2, 8.4 and 8.5. Release validation runs the full PHP lint and suites on
-PHP 7.4.33 (1,097 active-path, 63 purge, 37 counter, 63 REST-metric and 528 cache
-checks), collector syntax/unit tests and 80 local Chrome scenarios; deployment and activation require a separate authorized operation.
+PHP 7.4.33 (1,286 active-path, 63 purge, 37 counter, 63 REST-metric and 528 cache
+checks), collector syntax/unit tests and 84 local Chrome scenarios; deployment and activation require a separate authorized operation.
 The browser suite requires Python >= 3.9 and Chrome/Chromium. It serves local
 fixtures with actual OD preload tags/headers and checks variant selection,
 cover heroes, fractional DPR, original-free image requests, lazy loading, duplicate

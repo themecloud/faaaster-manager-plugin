@@ -1,7 +1,7 @@
 <?php
 
 check('effective parser declares its repair revision', FaaasterImageOptimization::parser_revision(), 1);
-check('parser revision participates in metrics ETag', apply_filters('od_current_url_metrics_etag_data', array('original' => 42)), array('original' => 42, 'faaaster_parser_revision' => 1, 'faaaster_css_lcp' => 1, 'faaaster_features' => FaaasterImageOptimization::FEATURES));
+check('parser revision participates in metrics ETag', apply_filters('od_current_url_metrics_etag_data', array('original' => 42)), array('original' => 42, 'faaaster_parser_revision' => 1, 'faaaster_css_lcp' => 2, 'faaaster_features' => FaaasterImageOptimization::FEATURES));
 
 foreach (array(
     'valid' => '<h2><span>Title</span></h2>',

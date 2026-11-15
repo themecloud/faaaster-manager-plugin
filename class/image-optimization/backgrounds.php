@@ -12,6 +12,13 @@ class FaaasterImageBackgrounds
     private $css_groups = array();
     private $css_rules = array();
     private $css_native_groups;
+    // Local stylesheets linked by the page are read at most once per page, within these bounds.
+    const MAX_STYLESHEETS = 32;
+    const MAX_STYLESHEET_BYTES = 524288;
+    const MAX_STYLESHEETS_BYTES = 2097152;
+    private $stylesheets;
+    private $stylesheets_complete = true;
+    private $external_rules = array();
 
     public function __construct(FaaasterImageSources $sources)
     {
@@ -32,7 +39,13 @@ class FaaasterImageBackgrounds
         return isset($this->handled[$xpath]) && $this->handled[$xpath]['id'] === $id;
     }
 
-    /** The native IP identity plus our geometry, consistently observed within a viewport group. */
+    /**
+     * The native IP identity plus our geometry, consistently observed within a viewport group.
+     * Every sample must name the same uploads file. "key" (its variant address) and "target" (tag,
+     * id, class) are null when the samples disagree on them: the file was measured before and
+     * after being adapted, or on an element whose classes a script changes. Such a group can
+     * only be adapted through the stylesheet rule that paints it (see external_rule()).
+     */
     public static function css_lcp_groups($collection)
     {
         $out = array();
@@ -45,17 +58,22 @@ class FaaasterImageBackgrounds
                 if (!is_array($image) || !is_array($geometry)
                     || !isset($image['url'], $image['tag'], $geometry['url'], $geometry['width'], $geometry['height'])
                     || $image['url'] !== $geometry['url']) { $valid = false; break; }
-                $key = FaaasterImageSources::variant_key($image['url']);
+                $path = FaaasterImageSources::upload_path($image['url']);
                 $width = $geometry['width']; $height = $geometry['height'];
-                if (!$key || !is_numeric($width) || !is_numeric($height)
+                if (!$path || !is_numeric($width) || !is_numeric($height)
                     || !is_finite((float) $width) || !is_finite((float) $height) || $width <= 0 || $height <= 0) {
                     $valid = false; break;
                 }
+                $key = FaaasterImageSources::variant_key($image['url']);
                 $target = array('tag' => strtoupper($image['tag']), 'id' => $image['id'] ?? null, 'class' => $image['class'] ?? null);
-                if ($candidate !== null && ($candidate['key'] !== $key || $candidate['target'] !== $target)) { $valid = false; break; }
                 if ($candidate === null) {
-                    $candidate = array('key' => $key, 'target' => $target, 'width' => 0, 'height' => 0,
+                    $candidate = array('key' => $key, 'path' => $path, 'target' => $target, 'width' => 0, 'height' => 0,
                         'min' => $group->get_minimum_viewport_width(), 'max' => $group->get_maximum_viewport_width());
+                } elseif ($candidate['path'] !== $path) {
+                    $valid = false; break;
+                } else {
+                    if ($candidate['key'] !== $key) { $candidate['key'] = null; }
+                    if ($candidate['target'] !== $target) { $candidate['target'] = null; }
                 }
                 $candidate['width'] = max($candidate['width'], $width);
                 $candidate['height'] = max($candidate['height'], $height);
@@ -79,24 +97,35 @@ class FaaasterImageBackgrounds
             && $processor->get_attribute('class') === $target['class'];
     }
 
-    /** Source identities trigger discovery; only rounded decisions can trigger subsequent purges. */
+    /**
+     * Source identities trigger discovery; only rounded decisions can trigger subsequent purges.
+     * A rule copied from a stylesheet file is identified by its uploads path, whichever address
+     * (original or variant) the samples carry: its decision does not change when they turn over.
+     */
     public static function css_lcp_decisions($collection, array $dimensions, array $widths)
     {
         $out = array();
         foreach (self::css_lcp_groups($collection) as $candidate) {
             if ($candidate === null) { $out[] = null; continue; }
             $key = $candidate['key'];
-            $source = $dimensions['CSS:' . $key][0] ?? null;
-            $measurement = array('widths' => array($key => $candidate['width']), 'heights' => array($key => $candidate['height']));
-            $out[] = array('min' => $candidate['min'], 'max' => $candidate['max'], 'target' => $candidate['target'], 'source' => $key,
+            $by_key = $key !== null && $candidate['target'] !== null
+                && (isset($dimensions['CSS:' . $key]) || !isset($dimensions['CSS:' . $candidate['path']]));
+            $id = $by_key ? $key : $candidate['path'];
+            $source = $dimensions['CSS:' . $id][0] ?? null;
+            $measurement = array('widths' => array($id => $candidate['width']), 'heights' => array($id => $candidate['height']));
+            $out[] = array('min' => $candidate['min'], 'max' => $candidate['max'], 'target' => $by_key ? $candidate['target'] : null, 'source' => $id,
                 'width' => is_array($source) && isset($source['width'], $source['height']) && $source['width'] > 0 && $source['height'] > 0
-                    ? self::painted_width($source, $measurement, $key, $widths) : null);
+                    ? self::painted_width($source, $measurement, $id, $widths) : null);
         }
         return $out;
     }
 
-    /** Preflight shares the existing CSP lookahead. Never evaluate stylesheet selectors in PHP. */
-    public function prepare_css_lcp($context, array $groups, array $styles, array $counts, $can_rewrite = true)
+    /**
+     * Preflight shares the existing CSP lookahead. Never evaluate stylesheet selectors in PHP.
+     * A source of a STYLE block is adapted in place on its uniquely identified element. A source
+     * that a stylesheet file of the page declares is adapted by copying that rule into the page.
+     */
+    public function prepare_css_lcp($context, array $groups, array $styles, array $counts, $can_rewrite = true, array $links = array(), $policy = false)
     {
         $sources = array();
         foreach ($can_rewrite ? $styles : array() as $css) {
@@ -107,31 +136,58 @@ class FaaasterImageBackgrounds
             }
         }
         $unmatched = array();
+        $copies = array();
         foreach ($groups as $index => $candidate) {
             if ($candidate === null) { continue; }
-            $count = $counts[self::css_identity($candidate['target'])] ?? 0;
-            $reason = !$can_rewrite ? 'csp' : ($count === 0 ? 'target_not_found'
-                : ($count !== 1 ? 'target_not_unique' : (!isset($sources[$candidate['key']]) ? 'source_not_in_style' : null)));
-            if ($reason !== null) { $unmatched[$reason] = ($unmatched[$reason] ?? 0) + 1; continue; }
             $key = $candidate['key'];
-            $source = $sources[$key];
-            $variable = '--faaaster-css-lcp-' . substr(hash('sha256', $key), 0, 16);
-            $this->css_groups[$index] = $candidate + array('source' => $source, 'variable' => $variable);
-            $this->dimensions['CSS:' . $key] = array(array('width' => $source['width'], 'height' => $source['height']));
-            $measurement = array('widths' => array($key => $candidate['width']), 'heights' => array($key => $candidate['height']));
-            $width = self::painted_width($source, $measurement, $key, $this->sources->widths());
+            $count = $candidate['target'] !== null ? ($counts[self::css_identity($candidate['target'])] ?? 0) : 1;
+            $rule = null;
+            if (!$can_rewrite) {
+                $reason = 'csp';
+            } elseif ($key !== null && $candidate['target'] !== null && isset($sources[$key])) {
+                $reason = $count === 0 ? 'target_not_found' : ($count !== 1 ? 'target_not_unique' : null);
+            } else {
+                // A copied rule needs a STYLE element of its own, which a visible style policy would refuse.
+                $rule = $policy ? null : $this->external_rule($candidate['path'], $links, $styles);
+                $reason = $rule ? null : ($count === 0 ? 'target_not_found' : ($count !== 1 ? 'target_not_unique' : 'source_not_in_style'));
+            }
+            if ($reason !== null) { $unmatched[$reason] = ($unmatched[$reason] ?? 0) + 1; continue; }
+            $source = $rule ? $rule['source'] : $sources[$key];
+            $id = $rule ? $candidate['path'] : $key;
+            $variable = '--faaaster-css-lcp-' . substr(hash('sha256', $id), 0, 16);
+            $this->css_groups[$index] = $candidate + array('source' => $source, 'variable' => $variable, 'external' => (bool) $rule);
+            $this->dimensions['CSS:' . $id] = array(array('width' => $source['width'], 'height' => $source['height']));
+            $measurement = array('widths' => array($id => $candidate['width']), 'heights' => array($id => $candidate['height']));
+            $width = self::painted_width($source, $measurement, $id, $this->sources->widths());
+            if ($rule && !isset($copies[$rule['id']])) { $copies[$rule['id']] = array('rule' => $rule, 'rules' => array()); }
             foreach ($this->variants($source, $width) as $variant) {
                 $attrs = array('rel' => 'preload', 'as' => 'image', 'fetchpriority' => 'high', 'href' => $variant['url']);
                 if ($variant['media'] !== null) { $attrs['media'] = $variant['media']; }
                 $context->link_collection->add_link($attrs, $candidate['min'], $candidate['max']);
-                $selector = '[data-faaaster-css-lcp="' . self::css_identity($candidate['target']) . '"]';
-                $declaration = $variable . ':url("' . $variant['url'] . '")';
-                $rule_key = $declaration . '|' . $variant['media'];
-                if (!isset($this->css_rules[$key][$selector][$rule_key])) {
-                    $this->css_rules[$key][$selector][$rule_key] = array('declaration' => $declaration, 'density' => $variant['media'], 'ranges' => array());
+                if ($rule) {
+                    // The author's own selector and at-rules, with the image alone replaced.
+                    $declaration = 'background-image:url("' . $variant['url'] . '")' . ($rule['important'] ? '!important' : '');
+                    $rules = &$copies[$rule['id']]['rules'];
+                } else {
+                    $selector = '[data-faaaster-css-lcp="' . self::css_identity($candidate['target']) . '"]';
+                    $declaration = $variable . ':url("' . $variant['url'] . '")';
+                    if (!isset($this->css_rules[$key][$selector])) { $this->css_rules[$key][$selector] = array(); }
+                    $rules = &$this->css_rules[$key][$selector];
                 }
-                $this->css_rules[$key][$selector][$rule_key]['ranges'][] = array($candidate['min'], $candidate['max']);
+                $rule_key = $declaration . '|' . $variant['media'];
+                if (!isset($rules[$rule_key])) {
+                    $rules[$rule_key] = array('declaration' => $declaration, 'density' => $variant['media'], 'ranges' => array());
+                }
+                $rules[$rule_key]['ranges'][] = array($candidate['min'], $candidate['max']);
+                unset($rules);
             }
+        }
+        foreach ($copies as $copy) {
+            // After the stylesheet it comes from: same selector, same specificity, later in the page.
+            $css = self::render_rules($copy['rules'], $copy['rule']['selector'], $copy['rule']['open'], $copy['rule']['close']);
+            if ($css === '' || strpos($css, '</') !== false) { continue; }
+            $html = '<style data-faaaster-images="css-lcp">' . $css . '</style>';
+            if ($copy['rule']['body']) { $context->processor->append_body_html($html); } else { $context->processor->append_head_html($html); }
         }
         if ($unmatched) { FaaasterImagePurges::record_css_lcp_unmatched($unmatched); }
         if ($this->css_groups) {
@@ -143,6 +199,159 @@ class FaaasterImageBackgrounds
             $this->css_native_groups = new OD_URL_Metric_Group_Collection($metrics, $collection->get_current_etag(),
                 $collection->get_breakpoints(), $collection->get_sample_size(), $collection->get_freshness_ttl());
         }
+    }
+
+    /**
+     * The one rule, in the local stylesheet files linked by the page, that paints this uploads
+     * file as a background and can be copied as it is: a single image, plain selector text, at
+     * most @media/@supports around it, and no other background declared for any of its selectors
+     * (a responsive variant must keep winning where the author wrote it). Null in any doubt:
+     * the author's rule then applies untouched. Files are read, never written.
+     */
+    private function external_rule($path, array $links, array $styles)
+    {
+        // One answer per file and page: several viewport groups usually measure the same image.
+        if (!array_key_exists($path, $this->external_rules)) {
+            $this->external_rules[$path] = $this->find_external_rule($path, $links, $styles);
+        }
+        return $this->external_rules[$path];
+    }
+
+    private function find_external_rule($path, array $links, array $styles)
+    {
+        if ($this->stylesheets === null) {
+            $this->stylesheets = array();
+            $seen = array();
+            $budget = self::MAX_STYLESHEETS_BYTES;
+            $this->stylesheets_complete = count($links) <= self::MAX_STYLESHEETS;
+            foreach (array_slice($links, 0, self::MAX_STYLESHEETS) as $link) {
+                $file = $this->sources->stylesheet($link['href']);
+                if (!$file || isset($seen[$file])) { continue; }
+                $seen[$file] = true;
+                $size = filesize($file);
+                $css = $size > 0 && $size <= self::MAX_STYLESHEET_BYTES && $size <= $budget ? file_get_contents($file) : false;
+                if (!is_string($css)) { $this->stylesheets_complete = false; continue; }
+                $budget -= $size;
+                $this->stylesheets[] = array('file' => true, 'body' => $link['body'], 'declarations' => self::background_declarations($css));
+            }
+            foreach ($styles as $css) {
+                $this->stylesheets[] = array('file' => false, 'body' => false, 'declarations' => self::background_declarations($css));
+            }
+        }
+        // A sheet left unread could hold the rule that must keep winning.
+        if (!$this->stylesheets_complete) { return null; }
+        $name = substr($path, strrpos($path, '/') + 1);
+        $plain = rawurldecode($name);
+        $found = null;
+        $matches = 0;
+        foreach ($this->stylesheets as $sheet) {
+            foreach ($sheet['declarations'] as $declaration) {
+                foreach ($declaration['urls'] as $token) {
+                    if (strpos($token['url'], $name) === false && strpos($token['url'], $plain) === false) { continue; }
+                    $source = $this->sources->resolve(str_replace(' ', '%20', $token['url']));
+                    if ($source && $source['path'] === $path) {
+                        $matches++;
+                        $found = array($sheet, $declaration, $source);
+                    }
+                }
+            }
+        }
+        // Named by several rules, the measured element could be painted by any of them.
+        if ($matches !== 1 || !$found[0]['file']) { return null; }
+        list($sheet, $declaration, $source) = $found;
+        $selector = trim($declaration['selector']);
+        if ($selector === '' || $selector[0] === '@' || strlen($selector) > 1000 || strpos($selector, '&') !== false
+            || !self::copyable($selector) || count($declaration['wrappers']) > 3 || count($declaration['urls']) !== 1) { return null; }
+        $open = '';
+        foreach ($declaration['wrappers'] as $wrapper) {
+            $wrapper = trim($wrapper);
+            if (strlen($wrapper) > 300 || !preg_match('~^@(?:media|supports)(?![\w-])~i', $wrapper) || !self::copyable($wrapper)) { return null; }
+            $open .= $wrapper . '{';
+        }
+        // One image and nothing else: the copy would drop a second layer or a gradient.
+        $token = $declaration['urls'][0];
+        $rest = trim(preg_replace('/!\s*important\s*$/i', '', trim(substr_replace($declaration['value'], '', $token['start'], $token['length']))));
+        if ($declaration['property'] === 'background-image' ? $rest !== '' : !preg_match('~^[A-Za-z0-9\s.%#/+-]*$~D', $rest)) { return null; }
+        foreach ($this->stylesheets as $other) {
+            foreach ($other['declarations'] as $competitor) {
+                if ($competitor !== $declaration && array_intersect($competitor['parts'], $declaration['parts'])) { return null; }
+            }
+        }
+        return array('id' => hash('sha256', $open . $selector), 'selector' => $selector, 'open' => $open,
+            'close' => str_repeat('}', count($declaration['wrappers'])), 'important' => $declaration['important'],
+            'body' => $sheet['body'], 'source' => $source);
+    }
+
+    /** Text copied from a stylesheet into a STYLE element: nothing that could end the element or the rule. */
+    private static function copyable($text)
+    {
+        return !preg_match('/[<\\\\{}\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/', $text) && strpos($text, '/*') === false && preg_match('//u', $text);
+    }
+
+    /**
+     * Every background / background-image declaration of a stylesheet, with the selector of its
+     * rule and the at-rules around it, as written. Strings, comments and functions are skipped.
+     */
+    private static function background_declarations($css)
+    {
+        $out = array();
+        if (stripos($css, 'background') === false) { return $out; }
+        $stack = array();
+        $start = 0;
+        $depth = 0;
+        $length = strlen($css);
+        for ($i = 0; $i <= $length; $i++) {
+            if ($i < $length) {
+                $skip = strcspn($css, "\\\"'/(){};", $i);
+                if ($skip > 0) { $i += $skip - 1; continue; }
+                $c = $css[$i];
+                if ($c === '\\') { $i++; continue; }
+                if ($c === '"' || $c === "'") { $i = self::string_end($css, $i); continue; }
+                if ($c === '/') {
+                    if (substr($css, $i, 2) === '/*') { $end = strpos($css, '*/', $i + 2); $i = $end === false ? $length : $end + 1; }
+                    continue;
+                }
+                if ($c === '(') { $depth++; continue; }
+                if ($c === ')') { $depth--; continue; }
+                if ($depth !== 0) { continue; }
+                if ($c === '{') { $stack[] = substr($css, $start, $i - $start); $start = $i + 1; continue; }
+            }
+            // ";", "}" or the end of the text closes a declaration of the innermost block.
+            if ($stack && $i > $start) {
+                $declaration = substr($css, $start, $i - $start);
+                if (preg_match('~^(?:\s|/\*.*?\*/)*(background(?:-image)?)(?:\s|/\*.*?\*/)*:~is', $declaration, $match)) {
+                    $value = substr($declaration, strlen($match[0]));
+                    $selector = $stack[count($stack) - 1];
+                    $out[] = array('selector' => $selector, 'wrappers' => array_slice($stack, 0, -1),
+                        'property' => strtolower($match[1]), 'value' => $value,
+                        'important' => preg_match('/!\s*important\s*$/i', preg_replace('~/\*.*?\*/~s', '', $value)) === 1,
+                        'urls' => self::urls($value), 'parts' => self::selector_parts($selector));
+                }
+            }
+            if ($i < $length && $css[$i] === '}') { array_pop($stack); }
+            $start = $i + 1;
+        }
+        return $out;
+    }
+
+    /** The selectors of a list, spacing normalized, to compare rules without evaluating them. */
+    private static function selector_parts($selector)
+    {
+        $parts = array();
+        $start = 0;
+        $depth = 0;
+        for ($i = 0, $n = strlen($selector); $i < $n; $i++) {
+            $c = $selector[$i];
+            if ($c === '\\') { $i++; }
+            elseif ($c === '"' || $c === "'") { $i = self::string_end($selector, $i); }
+            elseif ($c === '(' || $c === '[') { $depth++; }
+            elseif ($c === ')' || $c === ']') { $depth--; }
+            elseif ($c === ',' && $depth === 0) { $parts[] = substr($selector, $start, $i - $start); $start = $i + 1; }
+        }
+        $parts[] = substr($selector, $start);
+        return array_map(function ($part) {
+            return preg_replace('/\s*([>+~])\s*/', '$1', trim(preg_replace('/\s+/', ' ', $part)));
+        }, $parts);
     }
 
     /** Native inline lazy loading keeps the original metrics; handled CSS preloads use our variants. */
@@ -160,7 +369,7 @@ class FaaasterImageBackgrounds
     private function mark_css_lcp($processor)
     {
         foreach ($this->css_groups as $candidate) {
-            if (self::matches_css_target($processor, $candidate['target'])) {
+            if (!$candidate['external'] && self::matches_css_target($processor, $candidate['target'])) {
                 $processor->set_attribute('data-faaaster-css-lcp', self::css_identity($candidate['target']));
                 break;
             }
@@ -413,7 +622,7 @@ class FaaasterImageBackgrounds
         return $depth === 0;
     }
 
-    private static function render_rules(array $rules, $selector)
+    private static function render_rules(array $rules, $selector, $open = '', $close = '')
     {
         $css = '';
         foreach ($rules as $rule) {
@@ -431,7 +640,7 @@ class FaaasterImageBackgrounds
                 $queries[] = implode(' and ', array_filter(array(od_generate_media_query($range[0], $range[1]), $rule['density'])));
             }
             $query = implode(',', $queries);
-            $declaration = $selector . '{' . $rule['declaration'] . '}';
+            $declaration = $open . $selector . '{' . $rule['declaration'] . '}' . $close;
             $css .= $query === '' ? $declaration : '@media ' . $query . '{' . $declaration . '}';
         }
         return $css;

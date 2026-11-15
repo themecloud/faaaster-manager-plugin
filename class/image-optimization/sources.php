@@ -48,41 +48,11 @@ class FaaasterImageSources
         if (isset($this->resolved[$url])) {
             return $this->resolved[$url];
         }
-        if (!$this->available() || strpos($url, self::PREFIX) !== false || preg_match('/[\x00-\x20\\\\]/', $url)) {
+        $located = $this->locate($url, false);
+        if (!$located) {
             return null;
         }
-        $parts = wp_parse_url($url);
-        $base = wp_parse_url($this->uploads['baseurl']);
-        if (!$parts || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) {
-            return null;
-        }
-        if (isset($parts['scheme']) && !in_array(strtolower($parts['scheme']), array('http', 'https'), true)) {
-            return null;
-        }
-        // Only the actual uploads origin is accepted, never an arbitrary request Host.
-        if (isset($parts['host']) && (strtolower($parts['host']) !== strtolower($base['host'])
-            || (isset($parts['port']) ? $parts['port'] : null) !== (isset($base['port']) ? $base['port'] : null))) {
-            return null;
-        }
-        $path = isset($parts['path']) ? $parts['path'] : '';
-        $prefix = rtrim($base['path'], '/') . '/';
-        if (strpos($path, $prefix) !== 0 || preg_match('/%(?:2f|5c|00)/i', $path) || preg_match('/%(?![0-9a-f]{2})/i', $path)) {
-            return null;
-        }
-        $segments = explode('/', substr($path, strlen($prefix)));
-        $decoded = array();
-        foreach ($segments as $segment) {
-            $value = rawurldecode($segment);
-            if ($value === '' || $value === '.' || $value === '..' || preg_match('/[\x00-\x1f\x7f\\\\\/]/', $value)
-                || strpos($value, '%') !== false || !preg_match('//u', $value)) {
-                return null;
-            }
-            $decoded[] = $value;
-        }
-        $file = realpath($this->root . '/' . implode('/', $decoded));
-        if (!$file || strpos($file, $this->root . DIRECTORY_SEPARATOR) !== 0 || !is_file($file) || !is_readable($file)) {
-            return null;
-        }
+        list($decoded, $file, $base) = $located;
         $extension = strtolower(pathinfo($file, PATHINFO_EXTENSION));
         if (!in_array($extension, array('jpg', 'jpeg', 'png', 'webp'), true)) {
             return null;
@@ -113,6 +83,91 @@ class FaaasterImageSources
             'width' => (int) $dimensions[0], 'height' => (int) $dimensions[1],
             'version' => 'm' . $mtime . '-s' . $size,
         );
+    }
+
+    /**
+     * A stylesheet linked by the page, as a local file of the real uploads directory (where page
+     * builders write their generated CSS), or null. Its "?ver=" query is ignored. Read-only use.
+     */
+    public function stylesheet($url)
+    {
+        if (!is_string($url) || $url === '') {
+            return null;
+        }
+        $located = $this->locate($url, true);
+        return $located && strtolower(pathinfo($located[1], PATHINFO_EXTENSION)) === 'css' ? $located[1] : null;
+    }
+
+    /** Public URL to a readable file inside the real uploads directory: decoded segments, file, base URL parts. */
+    private function locate($url, $allow_query)
+    {
+        if (!$this->available() || strpos($url, self::PREFIX) !== false || preg_match('/[\x00-\x20\\\\]/', $url)) {
+            return null;
+        }
+        $parts = wp_parse_url($url);
+        $base = wp_parse_url($this->uploads['baseurl']);
+        if (!$parts || (!$allow_query && isset($parts['query'])) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) {
+            return null;
+        }
+        if (isset($parts['scheme']) && !in_array(strtolower($parts['scheme']), array('http', 'https'), true)) {
+            return null;
+        }
+        // Only the actual uploads origin is accepted, never an arbitrary request Host.
+        if (isset($parts['host']) && (strtolower($parts['host']) !== strtolower($base['host'])
+            || (isset($parts['port']) ? $parts['port'] : null) !== (isset($base['port']) ? $base['port'] : null))) {
+            return null;
+        }
+        $path = isset($parts['path']) ? $parts['path'] : '';
+        $prefix = rtrim($base['path'], '/') . '/';
+        if (strpos($path, $prefix) !== 0 || preg_match('/%(?:2f|5c|00)/i', $path) || preg_match('/%(?![0-9a-f]{2})/i', $path)) {
+            return null;
+        }
+        $decoded = self::decoded_segments(substr($path, strlen($prefix)));
+        if ($decoded === null) {
+            return null;
+        }
+        $file = realpath($this->root . '/' . implode('/', $decoded));
+        if (!$file || strpos($file, $this->root . DIRECTORY_SEPARATOR) !== 0 || !is_file($file) || !is_readable($file)) {
+            return null;
+        }
+        return array($decoded, $file, $base);
+    }
+
+    private static function decoded_segments($path)
+    {
+        $decoded = array();
+        foreach (explode('/', $path) as $segment) {
+            $value = rawurldecode($segment);
+            if ($value === '' || $value === '.' || $value === '..' || preg_match('/[\x00-\x1f\x7f\\\\\/]/', $value)
+                || strpos($value, '%') !== false || !preg_match('//u', $value)) {
+                return null;
+            }
+            $decoded[] = $value;
+        }
+        return $decoded;
+    }
+
+    /**
+     * Uploads path of an observed background, original file or variant alike, in the encoding
+     * resolve() emits. No filesystem I/O: one identity for a file before and after it is adapted.
+     */
+    public static function upload_path($url)
+    {
+        if (!is_string($url)) { return null; }
+        $parts = wp_parse_url($url);
+        $home = wp_parse_url(home_url('/'));
+        if (!$parts || isset($parts['query']) || isset($parts['fragment']) || isset($parts['user']) || isset($parts['pass'])) { return null; }
+        if (isset($parts['host']) && (strtolower($parts['host']) !== strtolower($home['host'])
+            || ($parts['port'] ?? null) !== ($home['port'] ?? null))) { return null; }
+        if (isset($parts['scheme']) && !in_array(strtolower($parts['scheme']), array('http', 'https'), true)) { return null; }
+        $path = $parts['path'] ?? '';
+        if (strlen($path) > self::MAX_PATH_LENGTH || preg_match('/%(?:2f|5c|00)/i', $path) || preg_match('/%(?![0-9a-f]{2})/i', $path)) { return null; }
+        if (preg_match('~^' . preg_quote(self::PREFIX, '~') . 'w(?:0|[1-9][0-9]{0,3})/m[1-9][0-9]{0,11}-s[1-9][0-9]{0,11}(/wp-content/uploads/.+)\z~', $path, $match)) {
+            $path = $match[1];
+        }
+        if (strpos($path, '/wp-content/uploads/') !== 0) { return null; }
+        $decoded = self::decoded_segments(substr($path, 1));
+        return $decoded === null ? null : '/' . implode('/', array_map('rawurlencode', $decoded));
     }
 
     /** Normalize an observed variant to its full-size source identity, without filesystem I/O. */
