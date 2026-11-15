@@ -392,6 +392,35 @@ $custom_crop = image_png(777, 333, 'custom-crop.png');
 $custom_set = $resolver->srcset($source, $resolver->candidates($custom_crop . ' 777w, ' . $large . ' 1600w'));
 check('registered cropped candidate retains its own source', strpos($custom_set, 'custom-crop.png 777w') !== false);
 check('registered crop converted without resizing', strpos($custom_set, '/w777/'), false);
+// The sizes WordPress made of one portrait photo (www.stephaneolivier.fr, IMG_4359, 15/11/2026).
+$photo = array();
+foreach (array(64 => 85, 375 => 500, 400 => 533, 768 => 1024, 1024 => 1365, 1152 => 1536, 1320 => 1760, 1536 => 2048) as $w => $h) {
+    $photo[$w] = image_png($w, $h, 'photo-' . $w . 'x' . $h . '.png');
+}
+$photo[1920] = image_png(1920, 2560, 'photo-scaled.png');
+$photo_srcset = array();
+foreach ($photo as $w => $url) { $photo_srcset[] = $url . ' ' . $w . 'w'; }
+$photo_source = $resolver->resolve($photo[1920]);
+$photo_set = array();
+foreach (explode(', ', $resolver->srcset($photo_source, $resolver->candidates(implode(', ', $photo_srcset)))) as $entry) {
+    list($entry_url, $descriptor) = explode(' ', $entry);
+    $photo_set[(int) $descriptor] = $entry_url;
+}
+foreach ($photo as $w => $url) {
+    check('native ' . $w . 'w keeps its own file unresized', $photo_set[$w], $resolver->url($resolver->resolve($url)));
+}
+// Each resized candidate names the narrowest WordPress size that covers it, with that file's version.
+foreach (array(320 => 375, 480 => 768, 640 => 768, 960 => 1024, 1280 => 1320, 1600 => 1920) as $bucket => $base) {
+    check('w' . $bucket . ' resized from the ' . $base . ' px file', $photo_set[$bucket], $resolver->url($resolver->resolve($photo[$base]), $bucket));
+}
+$from_full = 0;
+foreach ($photo_set as $entry_url) { $from_full += strpos($entry_url, 'photo-scaled.png') !== false; }
+check('full size only named where no smaller file covers', $from_full, 2); // its own w0 and w1600
+check('no candidate enlarges its file', (bool) preg_match('~/w(?:1920|2560)/~', implode(' ', $photo_set)), false);
+// Without an authored set the src file is the only one known: buckets come from it.
+$alone = $resolver->srcset($resolver->resolve($photo[768]), array());
+check('single file feeds its own buckets', substr_count($alone, 'photo-768x1024.png'), substr_count($alone, 'w, ') + 1);
+check('single file bucket', strpos($alone, '/w640/') !== false && strpos($alone, '/w960/') === false);
 
 $percent = image_png(40, 20, 'literal% photo.png');
 check('literal percent source not signed by px2 stays original', $resolver->resolve($percent), null);
