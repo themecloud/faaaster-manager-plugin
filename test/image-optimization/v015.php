@@ -194,13 +194,35 @@ foreach ($library_manifest as $name => $library) {
     check('loader license retained: ' . $name, hash_file('sha256', __DIR__ . '/fixtures/lazyload/' . $library['license']), $library['license_sha256']);
 }
 $vendor_manifest = json_decode(file_get_contents(__DIR__ . '/../../vendor/image-optimization/manifest.json'), true);
-check('declared OD backports', array_column($vendor_manifest['optimization-detective']['patches'], 'revision'), array(1, 2));
+check('declared OD backports', array_column($vendor_manifest['optimization-detective']['patches'], 'revision'), array(1, 2, 3));
 foreach ($vendor_manifest['optimization-detective']['patches'] as $od_patch) {
     check('declared backport diff integrity: revision ' . $od_patch['revision'], hash_file('sha256', __DIR__ . '/../../vendor/image-optimization/' . $od_patch['file']), $od_patch['sha256']);
     foreach ($od_patch['upstream_files'] as $name => $hash) {
         check('original client OD fixture: ' . $name, hash_file('sha256', __DIR__ . '/fixtures/od-upstream/' . $name), $hash);
     }
 }
+
+// OD revision 3: upstream copied every changed attribute into a data-od-* twin (the whole former srcset of
+// each image). Only data-od-xpath is read, by the detection script; the rest is written on request only.
+$meta_document = '<html><head></head><body><div id="page"><img id="hero" src="' . $large . '" width="1600" height="800" srcset="' . $small . ' 400w, ' . $large . ' 1600w" sizes="100vw">'
+    . '<img id="below" src="' . $large . '" width="400" loading="lazy" fetchpriority="high"><div id="bg" style="background-image:url(' . $large . ')"></div></div></body></html>';
+list($meta_page, $meta_links) = transform_html($meta_document);
+check('attributes are still rewritten', strpos($meta_page, 'srcset="' . FaaasterImageSources::PREFIX) !== false && strpos($meta_page, 'data-faaaster-bg="') !== false);
+check('former attribute values are not copied into the page', preg_match('/data-od-(?:replaced|added|removed)-(?!tag)/', $meta_page . $meta_links), 0);
+check('no diagnostic marker in the page', preg_match('/data-od-(?:unknown-tag|fetchpriority-already-added)/', $meta_page), 0);
+check('authored srcset address is gone from the page', strpos($meta_page, $small . ' 400w'), false);
+$meta_native = od_optimize_template_output_buffer($meta_document);
+check('detection keeps its XPath attribute', first_tag_attribute($meta_native, 'IMG', 'data-od-xpath'), "/HTML/BODY/DIV[@id='page']/*[1][self::IMG]");
+check('real optimization path writes no diagnostics either', preg_match('/data-od-(?!xpath|added-tag)[a-z-]+/', $meta_native), 0);
+$meta_requested = function () { return true; };
+add_filter('faaaster_od_meta_attributes', $meta_requested);
+list($meta_debug_page) = transform_html($meta_document);
+remove_filter('faaaster_od_meta_attributes', $meta_requested);
+check('diagnostics written on explicit request', strpos($meta_debug_page, 'data-od-replaced-srcset="' . $small . ' 400w, ' . $large . ' 1600w"') !== false
+    && strpos($meta_debug_page, ' data-od-added-srcset') !== false && strpos($meta_debug_page, 'data-od-removed-fetchpriority="high"') !== false);
+check('page is the same apart from the diagnostics', preg_replace('/ data-od-(?!xpath|added-tag)[a-z-]+(?:="[^"]*")?/', '', $meta_debug_page), $meta_page);
+list($meta_again) = transform_html($meta_document);
+check('request is not remembered across documents', $meta_again, $meta_page);
 
 $placeholder = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
 foreach (array('lazysizes', 'vanilla', 'rocket', 'litespeed', 'smush', 'swiper8') as $loader) {

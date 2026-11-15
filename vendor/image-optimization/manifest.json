@@ -12,7 +12,7 @@
       "build/web-vitals.js.map": "9102bfec2793dc1f433929da2108dc4278d2915f2a9546af9a0599bf946d5e4f",
       "class-od-data-validation-exception.php": "9e266482c77ec77166fb157283265e76d55008f912e4a3a767d6bbf77c62f9c6",
       "class-od-element.php": "1b2579020aec0282d6d0857634cc645ebba25acdf29c6b2f82fed6dec84c208f",
-      "class-od-html-tag-processor.php": "e195d03d1ca60cfcd55aee95c87fa9f83558d340f72d5106f78da2c9cf3e3691",
+      "class-od-html-tag-processor.php": "32ae4c59d0c461e7519c5751c59ecc53f0eeffed468d53e6d32633468232ebf5",
       "class-od-link-collection.php": "f0e47a85f892fa23dccb30a458329e2ae89352b778e0e5640613937e380cf527",
       "class-od-strict-url-metric.php": "946a14c1dbdb3628eea244e80ed9926acb08f7d9627ee14b12e2d34fc3a60554",
       "class-od-tag-visitor-context.php": "406c6875fb7757b663082507c3171e7681f6149a095f3819f36e4f935e162507",
@@ -57,6 +57,14 @@
         "sha256": "62a22f7dadc836999f8bd46d6722287ab80c80cac08ff9d659f519f6130cc527",
         "upstream_files": {
           "detection.php": "8866fcf8d9c625c1cf5cef389e85cf1cf9c23c17e306e2614d5d879c541c896d"
+        }
+      },
+      {
+        "revision": 3,
+        "file": "patches/optimization-detective-meta-attributes-v3.patch",
+        "sha256": "c81c46d802005750e9f0197547b9ac8b76f3fb069a3413b9e83f14657890847e",
+        "upstream_files": {
+          "class-od-html-tag-processor.php": "45e72658e003fe1ef8a629859863a0c890037d4a3ddc8103b319659d859f3317"
         }
       }
     ]

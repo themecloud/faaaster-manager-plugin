@@ -1,4 +1,4 @@
-# Optimization Detective backports (revisions 1 and 2)
+# Optimization Detective backports (revisions 1, 2 and 3)
 
 ## Revision 1 — parser
 
@@ -109,6 +109,34 @@ the browser console logging are unchanged.
 ```sh
 cd optimization-detective
 patch -p1 < /path/to/optimization-detective-detection-v2.patch
+```
+
+## Revision 3 — no diagnostic attributes in pages
+
+Prepared with manager-plugin 0.16.0 on 2026-11-15, on top of revision 1 (same file).
+`optimization-detective-meta-attributes-v3.patch` changes
+`class-od-html-tag-processor.php` only; the manifest records the original hash, the
+patched hash and the patch hash. The three patches applied in order to the upstream
+files reproduce the vendored ones.
+
+Upstream's `set_attribute()` and `remove_attribute()` record every change through
+`set_meta_attribute()`: `data-od-replaced-<name>="<former value>"`, `data-od-added-<name>`,
+`data-od-removed-<name>`. Image Prioritizer adds `data-od-unknown-tag` and
+`data-od-fetchpriority-already-added` the same way. Every image whose `srcset` the manager
+rewrites therefore carried its whole former `srcset` a second time: on the
+www.stephaneolivier.fr home page (15/11/2026), 231 `data-od-replaced-*` attributes, 62 KB of
+577 KB of HTML (2.8 KB of 56.1 KB once compressed), kept in the page cache and downloaded by
+every visitor. No script or PHP code reads them: `detect.js` only reads `data-od-xpath`.
+
+`set_meta_attribute()` now writes `xpath` as before and the other names only when the filter
+`faaaster_od_meta_attributes` returns true (asked once per document); it returns false when
+nothing was written. `data-od-xpath` and the `data-od-added-tag` marker of generated LINK
+elements are unchanged. The parser revision constant stays at 1: XPaths and stored
+measurements are not affected.
+
+```sh
+cd optimization-detective
+patch -p1 < /path/to/optimization-detective-meta-attributes-v3.patch
 ```
 
 ## Validation and upstream follow-up
