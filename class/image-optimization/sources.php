@@ -261,15 +261,19 @@ class FaaasterImageSources
             // (w0 has no bucket limit: a full size above 2560 stays available).
             $out[$width] = $this->url($item) . ' ' . $width . 'w';
         }
-        foreach ($this->widths as $width) {
-            if (isset($out[$width])) {
-                continue;
-            }
+        // A bucket is added unless a candidate less than 20 % wider is already there (5c < 6w; exactly
+        // 20 %, as 768 for 640, is far enough): the browser takes that candidate instead. Widest
+        // first, so that of two close buckets the wider one stays and covers the other.
+        $kept = null;
+        foreach (array_reverse($this->widths) as $width) {
             // Resized from the narrowest file that covers the bucket, not from the full size: when the
             // image service does not answer in time the site serves the file named here, unresized.
             foreach ($natives as $native_width => $item) {
-                if ($native_width > $width) {
-                    $out[$width] = $this->url($item, $width) . ' ' . $width . 'w';
+                if ($native_width >= $width) {
+                    if (min($native_width, $kept === null ? $native_width : $kept) * 5 >= $width * 6) {
+                        $out[$width] = $this->url($item, $width) . ' ' . $width . 'w';
+                        $kept = $width;
+                    }
                     break;
                 }
             }

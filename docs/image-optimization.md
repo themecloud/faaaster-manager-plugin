@@ -1,4 +1,4 @@
-# Image optimization — manager-plugin 0.15.3
+# Image optimization — manager-plugin 0.16.0
 
 The manager embeds Optimization Detective **1.0.0-beta7** and Image Prioritizer
 **1.0.0-beta4**, including compiled assets and licenses. There is no separate
@@ -47,6 +47,34 @@ www.faaaster.io home page, 422 KB of HTML, about 1,600 visited tags):
 Locally, OD's walk plus the visitors went from 70 ms to 27 ms on that page (bare walk:
 11.6 ms); `php test/image-optimization/run.php bench` with `BENCH_HTML=<page>` reproduces
 the measurement.
+
+Release 0.16.0 changes which srcset candidates are added and from which file, without
+changing the URL contract, `widths.json`, the embedded upstream copies or their patches.
+Measured on the first customer site (www.stephaneolivier.fr, 15/11/2026, photo `IMG_4359`,
+1920 × 2560): each added bucket was resized from the largest file of the set (`w640` of
+`IMG_4359-scaled.jpeg`, 1,048 KB) although WordPress had made `-768x1024.jpeg` (187 KB), so
+a visitor whose request fell back (image service silent for 500 ms, 36 % of requests on a
+cold cache that day) received the whole 1,048 KB file; and the home page carried 1,023
+candidates, up to 20 per image.
+- Each added bucket is resized from the narrowest same-ratio file of the authored set that
+  is wider than it (`w640` from `-768x1024.jpeg`), with that file's own `m{mtime}-s{size}`.
+- A bucket is no longer added when a candidate less than 20 % wider is already there (a
+  WordPress file, or a wider bucket just kept): the browser takes that candidate instead.
+Replayed on that home page: 1,023 → 874 candidates (at most 14 per image instead of 20),
+resized variants 404 → 255, of which built from the widest file although a narrower one
+covers 282 → 0, and naming a file above 500 KB 72 → 7; HTML 577 → 562 KB (gzip 56.1 →
+55.3 KB). `IMG_4359`: 19 → 14 candidates, 10 → 1 resized from the 1,048 KB file (`w1600`,
+which no other file covers). On www.faaaster.io: 63 → 54 candidates. No slot receives a
+candidate more than 20 % wider than the one it had. Dropping the site's registered widths
+as well (64, 100, 800 on that site) was measured and not retained: 698 candidates, but 153
+slots would get a much wider image than today (a 64 px slot a 320 px one).
+Quality trade-off, measured through the live
+service on `IMG_4359`: `w640` from the 768 px file weighs 108.7 KB against 112.5 KB from the
+full size, `w480` 62.8 against 64.1 KB; PSNR against a Lanczos reduction of the full size is
+31.8 against 33.8 dB at 640 and 32.8 against 32.2 dB at 480 (no consistent loss). The source
+is a JPEG WordPress already recompressed, as the native candidates always were.
+Backgrounds are unchanged: CSS names a single file, the one the site served before
+activation, so their fallback never got heavier.
 
 ## Activation and prerequisites
 
@@ -125,8 +153,18 @@ descriptor set requires authored usable `sizes` or a positive integer HTML
 `srcset="<w0 URL> 1x"`, without inventing `sizes` or changing intrinsic dimensions.
 
 Existing source sets retain their crops; expansion requires known display sizes.
-Full-size candidates use `w0` with the natural width descriptor, including widths
-above 2560. Picture sources keep their authored candidates and receive usable
+Every authored candidate (and the `src` file) is kept through `w0` with its natural width
+descriptor, including widths above 2560. Expansion then walks the admitted widths from the
+widest: for a width `w`, the narrowest file of the set at least as wide is found; if that
+file, or the bucket kept just before, is less than 20 % wider (`5c < 6w`; exactly 20 %, as
+768 for 640, is far enough) the bucket is skipped and the browser takes that candidate,
+otherwise the bucket is resized from that file. A bucket is therefore never resized from
+the full size when a smaller WordPress size covers it (on a fallback the site serves the
+file named in the URL, unresized), every resize starts from a file at least 20 % wider than
+its output, and of two close widths the wider one stays.
+A set is expanded only when all its files have
+the `src` ratio (height within 1 px); with no authored set the `src` file feeds the buckets.
+No attachment metadata or directory is read: the pool is the srcset already in the HTML. Picture sources keep their authored candidates and receive usable
 sizes for width descriptors when missing. Unsupported picture groups and unsupported IMG
 JavaScript loaders remain intact as a group. Supported `data-src` /
 `data-lazy-src` families keep their source attributes and convert existing
@@ -256,7 +294,7 @@ The image suite uses the real WordPress 6.9 parser, declared OD backports and un
 tests use the real queue, simulated HTTP and multiple PHP processes against
 shared file-backed metadata; they do not contact production. CI covers PHP
 7.4, 8.2, 8.4 and 8.5. Release validation runs the full PHP lint and suites on
-PHP 7.4.33 (980 active-path, 62 purge, 37 counter, 20 REST-metric and 528 cache
+PHP 7.4.33 (1,097 active-path, 63 purge, 37 counter, 63 REST-metric and 528 cache
 checks), collector syntax/unit tests and 80 local Chrome scenarios; deployment and activation require a separate authorized operation.
 The browser suite requires Python >= 3.9 and Chrome/Chromium. It serves local
 fixtures with actual OD preload tags/headers and checks variant selection,
