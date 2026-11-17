@@ -37,6 +37,15 @@ class SiteState
             wp_update_plugins();
             wp_update_themes();
 
+            // A check that did not reach WordPress.org leaves its transient
+            // without an answer, which reads below as "no update": say so, so
+            // the platform keeps the offers it already knows.
+            $update_checks = array(
+                'core'    => self::update_check_state(get_site_transient('update_core'), 'updates'),
+                'plugins' => self::update_check_state(get_site_transient('update_plugins'), 'checked'),
+                'themes'  => self::update_check_state(get_site_transient('update_themes'), 'checked'),
+            );
+
             $wp_plugins         = get_plugins();
             $plugin_update_data = get_site_transient('update_plugins')->response ?? [];
             foreach ($wp_plugins as $name => $plugin) {
@@ -64,9 +73,10 @@ class SiteState
             }
 
             return array(
-                'site_info' => self::get_site_info(),
-                'plugins'   => $plugins_state,
-                'themes'    => $themes_state
+                'site_info'     => self::get_site_info(),
+                'plugins'       => $plugins_state,
+                'themes'        => $themes_state,
+                'update_checks' => $update_checks
             );
         } catch (Exception $e) {
             // Restore error reporting
@@ -81,6 +91,23 @@ class SiteState
         // Restore error reporting
         error_reporting($error_reporting);
         ob_end_clean();
+    }
+
+    /**
+     * "ok" when the update transient holds WordPress.org's answer, "failed"
+     * when it only holds the marker WordPress writes before calling: no
+     * `checked` for plugins and themes, no offer for the core (the API always
+     * answers at least the latest version).
+     */
+    public static function update_check_state($transient, $answer)
+    {
+        if (! is_object($transient) || ! isset($transient->$answer)) {
+            return 'failed';
+        }
+        if ($answer === 'updates' && empty($transient->updates)) {
+            return 'failed';
+        }
+        return 'ok';
     }
 
     private static function get_theme_screenshot_url($slug)
