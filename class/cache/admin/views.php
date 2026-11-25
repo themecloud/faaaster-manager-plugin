@@ -312,7 +312,9 @@ class FaaasterCacheAdminViews
             ($status === 412 || $status === 404 || $status === 200) ? 'ok' : 'bad',
             ($status === 412 || $status === 404 || $status === 200) ? __('reachable', 'faaaster-manager-plugin') : sprintf(__('not reachable (%d)', 'faaaster-manager-plugin'), $status),
         );
-        $cf = defined('CFCACHE_ENABLED') && CFCACHE_ENABLED === 'true';
+        $cf = class_exists('FaaasterCloudflare')
+            ? FaaasterCloudflare::hotEnabled() === 'true'
+            : defined('CFCACHE_ENABLED') && CFCACHE_ENABLED === 'true';
         $rows[] = array(__('Cloudflare edge cache', 'faaaster-manager-plugin'), $cf ? 'ok' : 'off', $cf ? __('enabled — purged with the server cache', 'faaaster-manager-plugin') : __('not enabled on this site', 'faaaster-manager-plugin'));
         $rows[] = array(__('Object cache', 'faaaster-manager-plugin'), wp_using_ext_object_cache() ? 'ok' : 'off', wp_using_ext_object_cache() ? __('persistent (APCu)', 'faaaster-manager-plugin') : __('none', 'faaaster-manager-plugin'));
         $last = null;
