@@ -10,6 +10,8 @@ fc_check('clear_cache: exactly one Cloudflare call', $cf->everything, 1);
 fc_check('clear_cache: object cache flushed', $GLOBALS['faaaster_test']['cache_flushed'], 1);
 fc_check('clear_cache: one nginx purge-all', $t->count('all'), 1);
 fc_check('clear_cache: no opcache field (never reset)', array_key_exists('opcache', $response->data['data']), false);
+fc_check('clear_cache: object cache flushed BEFORE the nginx purge-all', $t->object_flushes_at_purge_all, array(1));
+fc_check('clear_cache ok → no retry recorded', array_key_exists('retried_after', $response->data['data']['fastcgi']), false);
 
 // Purge totale lancée en CLI : l'object cache de FPM est vidé par la route dédiée.
 list($cache, $t, $cf) = faaaster_test_boot(array('cli' => true));
@@ -17,6 +19,12 @@ $cache->queue()->enqueue_all('upgrader:plugin');
 $r = $cache->queue()->flush(false);
 fc_check('CLI purge-all → FPM object cache flushed once', $t->count('object_cache'), 1);
 fc_check('report carries object_cache_fpm', $r['object_cache_fpm']['status'], 200);
+$kinds = array_values(array_filter(array_map(function ($c) {
+    return $c[0];
+}, $t->calls), function ($k) {
+    return $k === 'object_cache' || $k === 'all';
+}));
+fc_check('CLI purge-all → FPM object cache flushed BEFORE the nginx purge-all', $kinds, array('object_cache', 'all'));
 list($cache, $t, $cf) = faaaster_test_boot(array('cli' => true));
 $cache->queue()->enqueue_url('https://example.com/a/', 'cli');
 $cache->queue()->flush(true);
@@ -62,6 +70,30 @@ $response = $cache->hostmanager()->rest_clear_cache(null);
 fc_check('FastCGI failure → 502', $response->get_status(), 502);
 fc_check('FastCGI failure → purge_failed', $response->data['code'], 'purge_failed');
 fc_check('failure carries the nginx status', $response->data['data']['fastcgi']['status'], 502);
+fc_check('persistent 5xx → exactly one retry', $t->count('all'), 2);
+fc_check('persistent 5xx → first status kept', $response->data['data']['fastcgi']['retried_after'], 502);
+
+// Course clean-dir-on-request / nginx (fineliscoaching 25/11/2026) : 500 puis 200.
+list($cache, $t, $cf) = faaaster_test_boot();
+$t->all_statuses = array(500, 200);
+$response = $cache->hostmanager()->rest_clear_cache(null);
+fc_check('500 then 200 → clear_cache ok', array($response->get_status(), $response->data['code']), array(200, 'ok'));
+fc_check('500 then 200 → two purge-all', $t->count('all'), 2);
+fc_check('500 then 200 → report says it retried', array($response->data['data']['fastcgi']['status'], $response->data['data']['fastcgi']['retried_after']), array(200, 500));
+fc_check('500 then 200 → ms adds both attempts', $response->data['data']['fastcgi']['ms'], 2);
+fc_check('500 then 200 → one Cloudflare call, one object flush', array($cf->everything, $GLOBALS['faaaster_test']['cache_flushed']), array(1, 1));
+
+// Échec de connexion (status 0) : pas de nouvel essai.
+list($cache, $t, $cf) = faaaster_test_boot();
+$t->all_status = 0;
+$response = $cache->hostmanager()->rest_clear_cache(null);
+fc_check('status 0 → purge_failed without retry', array($response->data['code'], $t->count('all')), array('purge_failed', 1));
+
+// 4xx (garde loopback 403…) : pas de nouvel essai non plus.
+list($cache, $t, $cf) = faaaster_test_boot();
+$t->all_status = 403;
+$response = $cache->hostmanager()->rest_clear_cache(null);
+fc_check('403 → purge_failed without retry', array($response->data['code'], $t->count('all')), array('purge_failed', 1));
 
 // ---- clear_cache : Bearer journalisé, bloquant seulement sur demande.
 list($cache, $t, $cf) = faaaster_test_boot();

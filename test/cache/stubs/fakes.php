@@ -6,6 +6,10 @@ class FaaasterTestTransport implements FaaasterCacheTransportInterface
     public $calls = array();
     public $path_status = 200;
     public $all_status = 200;
+    /** Statuts successifs de /purge-all (vidée dans l'ordre, puis $all_status). */
+    public $all_statuses = array();
+    /** Nombre de wp_cache_flush() déjà faits à chaque appel de /purge-all. */
+    public $object_flushes_at_purge_all = array();
     public $delay_ms = 0;
 
     public function purge_path($host, $path)
@@ -20,7 +24,11 @@ class FaaasterTestTransport implements FaaasterCacheTransportInterface
     public function purge_all($host)
     {
         $this->calls[] = array('all', $host, null);
-        return array('status' => $this->all_status, 'ms' => 1, 'error' => null);
+        $this->object_flushes_at_purge_all[] = isset($GLOBALS['faaaster_test']['cache_flushed'])
+            ? $GLOBALS['faaaster_test']['cache_flushed']
+            : 0;
+        $status = $this->all_statuses ? array_shift($this->all_statuses) : $this->all_status;
+        return array('status' => $status, 'ms' => 1, 'error' => null);
     }
 
     public function flush_object_cache($host)
