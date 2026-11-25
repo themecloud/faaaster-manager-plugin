@@ -144,6 +144,15 @@ class FaaasterCachePurgeQueue
             return $p['url'];
         }, $this->urls));
 
+        // Changement global lancé en CLI (mise à jour par WP-CLI, wp elementor
+        // flush-css…) : l'object cache de PHP-FPM n'a rien vu, on le fait vider.
+        // Incident www.faaaster.io du 04/10/2026 (option Elementor périmée).
+        // AVANT la purge nginx : une page régénérée entre les deux serait construite
+        // sur l'ancien object cache puis remise en cache.
+        if ($this->all && $this->cli) {
+            $report['object_cache_fpm'] = $this->transport->flush_object_cache($site['home_host']);
+        }
+
         if ($this->all) {
             $report['mode'] = 'all';
             $report['nginx'] = $this->purge_all_nginx($site['home_host']);
@@ -153,16 +162,14 @@ class FaaasterCachePurgeQueue
             if ($report['nginx']['escalated']) {
                 $report['mode'] = 'all';
                 $this->all = true;
+                // Bascule en purge totale en cours de route : l'object cache ne peut
+                // être vidé qu'après (comportement inchangé pour ce cas).
+                if ($this->cli) {
+                    $report['object_cache_fpm'] = $this->transport->flush_object_cache($site['home_host']);
+                }
             }
         }
         $report['ok'] = !empty($report['nginx']['ok']);
-
-        // Changement global lancé en CLI (mise à jour par WP-CLI, wp elementor
-        // flush-css…) : l'object cache de PHP-FPM n'a rien vu, on le fait vider.
-        // Incident www.faaaster.io du 04/10/2026 (option Elementor périmée).
-        if ($this->all && $this->cli) {
-            $report['object_cache_fpm'] = $this->transport->flush_object_cache($site['home_host']);
-        }
 
         if ($this->cf_enabled && $this->cloudflare) {
             $report['cloudflare'] = $this->all
@@ -204,20 +211,39 @@ class FaaasterCachePurgeQueue
         return $report;
     }
 
+    /**
+     * Une 5xx de /purge-all : clean-dir-on-request (image wp-builder) répond 500
+     * dès qu'un dossier du cache résiste, parce que nginx y réécrit pendant la
+     * suppression, mais il a supprimé tout le reste. Un second passage, presque
+     * vide, aboutit (fineliscoaching, 25/11/2026 : 500 en 1,4 s sous un crawl de
+     * Googlebot à 1 page/s, cache pourtant vidé). Pas de nouvel essai sur un échec
+     * de connexion (status 0) : il attendrait le même délai pour rien.
+     */
     private function purge_all_nginx($host)
     {
         $r = $this->transport->purge_all($host);
+        $ms = $r['ms'];
+        $retried_after = null;
+        if ($r['status'] >= 500 && $r['status'] < 600) {
+            $retried_after = $r['status'];
+            $r = $this->transport->purge_all($host);
+            $ms += $r['ms'];
+        }
         if (is_dir(dirname(self::PAGESPEED_FLUSH))) {
             @touch(self::PAGESPEED_FLUSH);
         }
-        return array(
+        $report = array(
             'mode' => 'all',
             'status' => $r['status'],
-            'ms' => $r['ms'],
+            'ms' => $ms,
             'error' => $r['error'],
             'ok' => $r['status'] >= 200 && $r['status'] < 300,
             'escalated' => false,
         );
+        if ($retried_after !== null) {
+            $report['retried_after'] = $retried_after;
+        }
+        return $report;
     }
 
     private function purge_urls_nginx(array $site)

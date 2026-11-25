@@ -21,14 +21,22 @@ class FaaasterCacheHostmanager
         $this->queue = $queue;
     }
 
-    /** @return array rapport de purge + object_cache */
+    /**
+     * Object cache D'ABORD, pages ensuite : une page régénérée entre la purge nginx
+     * et le vidage de l'APCu serait construite sur les anciennes valeurs, puis
+     * remise en cache jusqu'à la purge suivante (un robot qui crawle à 1 page/s
+     * tombe dans cette fenêtre).
+     *
+     * @return array rapport de purge + object_cache
+     */
     public function hard_flush()
     {
-        $report = $this->queue->enqueue_all('hostmanager', true);
-        if (function_exists('wp_cache_flush')) {
+        $object_cache = function_exists('wp_cache_flush');
+        if ($object_cache) {
             wp_cache_flush();
         }
-        $report['object_cache'] = function_exists('wp_cache_flush');
+        $report = $this->queue->enqueue_all('hostmanager', true);
+        $report['object_cache'] = $object_cache;
         return $report;
     }
 
