@@ -26,6 +26,25 @@ class FaaasterCloudflare
     }
 
     /**
+     * Valeur effective de CFCACHE_ENABLED : "true" quand un CDN met le site en
+     * cache (proxy Faaaster ou Cloudflare propre du client), et que chaque
+     * purge doit donc être relayée à Faaaster. La plateforme la déduit de
+     * l'état réel du proxy et la pousse À CHAUD dans l'environnement de
+     * php-fpm (config.json → pool, USR2, sans redémarrage). La constante écrite
+     * au démarrage du pod reste le repli des images qui ne la transmettent pas.
+     *
+     * @return string "true" | "false"
+     */
+    public static function hotEnabled()
+    {
+        $hot = isset($_SERVER['CFCACHE_ENABLED']) ? $_SERVER['CFCACHE_ENABLED'] : getenv('CFCACHE_ENABLED');
+        if ($hot === 'true' || $hot === 'false') {
+            return $hot;
+        }
+        return defined('CFCACHE_ENABLED') && CFCACHE_ENABLED === 'true' ? 'true' : 'false';
+    }
+
+    /**
      * Client du module cache : purge totale, UN appel, résultat réel.
      * @return array ['status' => int, 'ms' => int, 'error' => string|null]
      */

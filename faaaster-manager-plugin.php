@@ -4,7 +4,7 @@
  * Plugin Name: Faaaster Manager
  * Plugin URI: https://faaaster.io
  * Description: This plugin is ideal to effortlessly manage your website.
- * Version: 0.16.2
+ * Version: 0.16.3
  * Author: Faaaster
  * Author URI: https://faaaster.io
  * License: GPLv2 or later
@@ -22,7 +22,9 @@ global $current_stylesheet;
 $app_id = defined('APP_ID') ? APP_ID : false;
 $branch = defined('BRANCH') ? BRANCH : false;
 $wp_api_key = defined('WP_API_KEY') ? WP_API_KEY : false;
-$cfcache_enabled = defined('CFCACHE_ENABLED') ? CFCACHE_ENABLED : "false";
+// Lu à chaud (env php-fpm), constante de démarrage en repli : cf. FaaasterCloudflare::hotEnabled().
+require_once(__DIR__ . '/class/cloudflare-manager.php');
+$cfcache_enabled = FaaasterCloudflare::hotEnabled();
 $private = defined('PRIVATE_MODE') ? PRIVATE_MODE : "false";
 $app_env = ['APP_ID' => $app_id, 'BRANCH' => $branch, 'WP_API_KEY' => $wp_api_key, 'CFCACHE_ENABLED' => $cfcache_enabled];
 
